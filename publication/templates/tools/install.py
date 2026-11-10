@@ -317,6 +317,11 @@ def main():
         with install_lock(prefix): apply_stage(stage,prefix)
     if shutil.which('update-desktop-database'):
         subprocess.run(['update-desktop-database',str(prefix/'share/applications')],check=True)
+    # A stale icon-theme.cache hides the new icon from docks and menus.
+    icons=prefix/'share/icons/hicolor'
+    cache_tool=shutil.which('gtk4-update-icon-cache') or shutil.which('gtk-update-icon-cache')
+    if cache_tool and (icons/'icon-theme.cache').is_file():
+        subprocess.run([cache_tool,'-q','-t','-f',str(icons)],check=False)
     print('Start: '+str(prefix/'bin/ky-prism'))
     if str(prefix/'bin') not in os.environ.get('PATH','').split(os.pathsep): print('Add '+str(prefix/'bin')+' to PATH, or log out/in after installing to ~/.local.')
 

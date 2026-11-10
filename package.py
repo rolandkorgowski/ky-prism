@@ -228,6 +228,11 @@ def main():
             if live_hypr and config.exists(): subprocess.run(['hyprctl','reload'],capture_output=True,timeout=10,check=False)
             raise
         if shutil.which('update-desktop-database'): subprocess.run(['update-desktop-database',str(home/'.local/share/applications')],check=False)
+        # A stale icon-theme.cache hides the new icon from docks and menus.
+        icons=home/'.local/share/icons/hicolor'
+        cache_tool=shutil.which('gtk4-update-icon-cache') or shutil.which('gtk-update-icon-cache')
+        if cache_tool and (icons/'icon-theme.cache').is_file():
+            subprocess.run([cache_tool,'-q','-t','-f',str(icons)],check=False)
         if live_hypr and shutil.which('omarchy-shell'):
             try:
                 refreshed=subprocess.run(['omarchy-shell','shell','rescanPlugins'],capture_output=True,text=True,timeout=15)
