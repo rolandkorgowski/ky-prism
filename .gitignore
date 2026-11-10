@@ -1,0 +1,9 @@
+build/
+build-*/
+exports/
+prebuilt/
+user-data/
+__pycache__/
+*.pyc
+reports/
+publication/reports/

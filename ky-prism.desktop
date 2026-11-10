@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=ky-prism
+Comment=Kafelkowa przeglądarka zdjęć GPU, EXIF i ICC
+Exec=ky-prism %f
+Icon=ky-prism
+Terminal=false
+Categories=Graphics;Photography;Viewer;
+MimeType=image/jpeg;image/tiff;image/png;image/x-canon-cr2;image/x-canon-cr3;image/x-nikon-nef;image/x-sony-arw;image/x-adobe-dng;image/x-fuji-raf;image/x-panasonic-rw2;image/x-olympus-orf;image/x-hasselblad-3fr;image/x-hasselblad-fff;
+StartupWMClass=ky-prism

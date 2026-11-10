@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="-80 -80 160 160">
+<path transform="rotate(0.000000000)" d="M0 -60 C32 -56 57 -17 36 17 L28 5 C30 -23 18 -40 0 -60" fill="#8bb9ff" fill-opacity="0.070588235" stroke="#74869b" stroke-width="1.3"/>
+<path transform="rotate(51.428571429)" d="M0 -60 C32 -56 57 -17 36 17 L28 5 C30 -23 18 -40 0 -60" fill="#8bb9ff" fill-opacity="0.086274510" stroke="#74869b" stroke-width="1.3"/>
+<path transform="rotate(102.857142857)" d="M0 -60 C32 -56 57 -17 36 17 L28 5 C30 -23 18 -40 0 -60" fill="#8bb9ff" fill-opacity="0.101960784" stroke="#74869b" stroke-width="1.3"/>
+<path transform="rotate(154.285714286)" d="M0 -60 C32 -56 57 -17 36 17 L28 5 C30 -23 18 -40 0 -60" fill="#8bb9ff" fill-opacity="0.117647059" stroke="#74869b" stroke-width="1.3"/>
+<path transform="rotate(205.714285714)" d="M0 -60 C32 -56 57 -17 36 17 L28 5 C30 -23 18 -40 0 -60" fill="#8bb9ff" fill-opacity="0.133333333" stroke="#74869b" stroke-width="1.3"/>
+<path transform="rotate(257.142857143)" d="M0 -60 C32 -56 57 -17 36 17 L28 5 C30 -23 18 -40 0 -60" fill="#8bb9ff" fill-opacity="0.149019608" stroke="#74869b" stroke-width="1.3"/>
+<path transform="rotate(308.571428571)" d="M0 -60 C32 -56 57 -17 36 17 L28 5 C30 -23 18 -40 0 -60" fill="#8bb9ff" fill-opacity="0.164705882" stroke="#74869b" stroke-width="1.3"/>
+<circle r="66" fill="none" stroke="#8bb9ff" stroke-width="1.6"/>
+<circle r="73" fill="none" stroke="#74869b" stroke-width="0.8"/>
+</svg>

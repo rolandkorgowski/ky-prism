@@ -1,0 +1,10 @@
+/build*/
+/dist/
+__pycache__/
+*.pyc
+*.user
+*.core
+core
+.env
+.env.*
+/SOURCE-MANIFEST.json

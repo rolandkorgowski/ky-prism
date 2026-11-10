@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "kylen.prism-chrome",
+  "name": "Google Chrome · Obrót",
+  "version": "0.12.1",
+  "author": "Krzysztof Kylen Lenartowicz",
+  "license": "MIT",
+  "description": "Skrót Google Chrome z jednorazową wektorową animacją logo",
+  "kinds": [
+    "bar-widget"
+  ],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "ChromeWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Google Chrome",
+    "description": "Otwórz przeglądarkę Chrome",
+    "category": "System",
+    "defaultSection": "left",
+    "allowMultiple": false
+  }
+}

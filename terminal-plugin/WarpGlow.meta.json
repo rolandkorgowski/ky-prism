@@ -1,0 +1,8 @@
+{
+  "qsbVersion": 64,
+  "baker": "Qt Shader Baker 6.12.0",
+  "files": {
+    "WarpGlow.frag": "df714b801154bc468468c06b9ff4c507bd0a36c415efcfa6f09f272efea7c0b0",
+    "WarpGlow.frag.qsb": "4c0391bd404634b14fc097bd0b37c9ae156c99f02fcb35be28b612d784bd007b"
+  }
+}

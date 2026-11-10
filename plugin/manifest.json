@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "kylen.prism",
+  "name": "ky-prism · Przysłona",
+  "version": "0.12.1",
+  "author": "Krzysztof Kylen Lenartowicz",
+  "license": "MIT",
+  "description": "Jednorazowa wektorowa animacja przysłony i przeglądarka zdjęć",
+  "kinds": [
+    "bar-widget"
+  ],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "PrismWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "ky-prism",
+    "description": "Przeglądarka zdjęć",
+    "category": "System",
+    "defaultSection": "left",
+    "allowMultiple": false
+  }
+}

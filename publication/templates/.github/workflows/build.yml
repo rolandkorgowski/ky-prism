@@ -1,0 +1,80 @@
+name: Build and package
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu-24.04
+            image: ubuntu:24.04
+            generator: DEB
+            rhel: false
+          - name: ubuntu-26.04
+            image: ubuntu:26.04
+            generator: DEB
+            rhel: false
+          - name: el9-alma-compatibility
+            image: almalinux:9
+            generator: RPM
+            rhel: true
+          - name: el10-alma-compatibility
+            image: almalinux:10
+            generator: RPM
+            rhel: true
+    container:
+      image: ${{ matrix.image }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Bootstrap container
+        run: |
+          if command -v apt-get >/dev/null; then
+            apt-get update
+            apt-get install -y --no-install-recommends git python3 ca-certificates dpkg-dev
+          else
+            dnf install -y git python3 ca-certificates rpm-build
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Dependencies
+        env:
+          EL_REPOSITORIES: ${{ matrix.rhel }}
+        run: |
+          args=(--dependencies-only --yes)
+          if [[ $EL_REPOSITORIES == true ]]; then args+=(--setup-rhel-repos); fi
+          bash install.sh "${args[@]}"
+      - name: Build and test
+        run: |
+          python3 -B -m unittest discover -s tests -p 'test_*.py' -v
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DPRISM_WITH_NVJPEG=OFF
+          cmake --build build --parallel 2
+          ctest --test-dir build --output-on-failure --output-log build/ctest.log
+      - name: Native package and matching source
+        env:
+          DISTRO_NAME: ${{ matrix.name }}
+          PACKAGE_GENERATOR: ${{ matrix.generator }}
+        run: |
+          mkdir -p dist
+          cpack --config build/CPackConfig.cmake -G "$PACKAGE_GENERATOR" -B dist -D "CPACK_PACKAGE_FILE_NAME=ky-prism-${DISTRO_NAME}-$(uname -m)"
+          git archive --format=tar.gz --prefix=ky-prism/ -o "dist/ky-prism-source-${GITHUB_SHA}.tar.gz" HEAD
+          (cd dist && sha256sum -- * > SHA256SUMS)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: ky-prism-${{ matrix.name }}
+          path: |
+            dist/*
+            build/ctest.log
+          if-no-files-found: warn

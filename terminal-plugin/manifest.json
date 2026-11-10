@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "kylen.prism-terminal",
+  "name": "Alacritty · Terminal",
+  "version": "0.15.5",
+  "author": "Krzysztof Kylen Lenartowicz",
+  "license": "MIT",
+  "description": "Alacritty z przestrzenną animacją kodu Matrix warp, bez pracy w tle",
+  "kinds": [
+    "bar-widget"
+  ],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "WarpTerminalWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Alacritty",
+    "description": "Otwórz terminal Alacritty",
+    "category": "System",
+    "defaultSection": "left",
+    "allowMultiple": false
+  }
+}
