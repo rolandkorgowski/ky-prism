@@ -98,7 +98,11 @@ public:
   void cancelForShutdown();
   bool searching() const;
   bool active() const;
+  // Duplicate search: a folder is selected and the start button is enabled.
+  bool canStart() const;
   // Tests drive the worker without a system chooser.
+  void selectFolderForTest(const QString &path);
+  void startForTest();
   void setDestinationForTest(const QString &path);
   void runForTest();
   QString messageText() const;

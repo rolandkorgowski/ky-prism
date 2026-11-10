@@ -23,7 +23,7 @@ przy niskim i pełnym kryciu oprawy. Wartość domyślna: 94 % tam, gdzie
 kompozytor nie rozmywa tła (GNOME), 69 % — dotychczasowy materiał — w
 Hyprland, gdzie rozmycie jest dostępne. `PRISM_UI_OPACITY=0…100` nadal
 wymusza wartość dla jednego uruchomienia. Okna dialogowe, menu i podpowiedzi
-nie schodzą poniżej 90 %, żeby tekst pozostał czytelny.
+nie schodzą poniżej 97 % (od poprawki okna duplikatów; wcześniej 90 %), żeby tekst okna pod spodem nie prześwitywał.
 
 **Wygląd.** Pasek narzędzi jest podzielony na grupy (pliki, nawigacja, praca,
 zoom, znaczniki, metadane); ikony wektorowe, karty, lista i siatka miniatur,

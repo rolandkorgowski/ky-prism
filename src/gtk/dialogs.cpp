@@ -1033,7 +1033,7 @@ struct FileOpsDialog::Impl : QObject {
   std::unique_ptr<Table> table;
   GtkWidget *message = nullptr, *destinationLabel = nullptr,
             *progress = nullptr, *action = nullptr, *cancelButton = nullptr,
-            *choose = nullptr, *copyList = nullptr;
+            *choose = nullptr, *copyList = nullptr, *startButton = nullptr;
   guint pulse = 0;
   QString source, destination, root, copyListSource;
   QStringList sources;
@@ -1115,6 +1115,8 @@ struct FileOpsDialog::Impl : QObject {
     active = true;
     token = std::make_shared<std::atomic_bool>(false);
     gtk_widget_set_sensitive(choose, FALSE);
+    if (startButton)
+      gtk_widget_set_sensitive(startButton, FALSE);
     gtk_widget_set_sensitive(action, FALSE);
     gtk_widget_set_sensitive(cancelButton, TRUE);
     Ui::text(Ui::buttonLabel(cancelButton), "&Anuluj");
@@ -1158,6 +1160,8 @@ struct FileOpsDialog::Impl : QObject {
     active = false;
     setBusy(false);
     gtk_widget_set_sensitive(choose, TRUE);
+    if (startButton)
+      gtk_widget_set_sensitive(startButton, !root.isEmpty());
     gtk_widget_set_sensitive(cancelButton, TRUE);
     Ui::text(Ui::buttonLabel(cancelButton), "Z&amknij");
     gtk_progress_bar_set_fraction(
@@ -1231,26 +1235,46 @@ struct FileOpsDialog::Impl : QObject {
                                 setDestination(name);
                             });
   }
+  // Choosing a folder only selects it; the search starts with its own button.
+  void selectRoot(const QString &directory) {
+    if (active)
+      return;
+    root = directory;
+    Ui::literal(destinationLabel, directory);
+    groups.clear();
+    showGroups();
+    gtk_widget_set_visible(progress, FALSE);
+    Ui::text(message, "Katalog wybrany. Kliknij „Rozpocznij wyszukiwanie”.");
+    gtk_widget_set_sensitive(startButton, TRUE);
+    gtk_widget_grab_focus(startButton);
+    updateSelection();
+  }
   void searchIn(const QString &directory) {
     root = directory;
     Ui::literal(destinationLabel, directory);
     groups.clear();
     showGroups();
+    gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(progress), 0.0);
     start([directory](auto t, auto p) {
       auto found = FileOps::duplicates(directory, t, p);
-      return FileResult{found,
-                        {},
-                        QString("Znaleziono %1 grup duplikatów. Wybierz "
-                                "konkretną ścieżkę do przeniesienia do kosza.")
-                            .arg(found.size()),
-                        false};
+      return FileResult{
+          found,
+          {},
+          found.isEmpty()
+              ? QString("Nie znaleziono duplikatów. Duplikat to plik o tej "
+                        "samej nazwie, wielkości i zawartości (MD5) w innym "
+                        "miejscu wybranego katalogu lub jego podkatalogów.")
+              : QString("Znaleziono %1 grup duplikatów. Wybierz "
+                        "konkretną ścieżkę do przeniesienia do kosza.")
+                    .arg(found.size()),
+          false};
     });
   }
   void search() {
     Dialogs::chooseFolder(s.window, "Gdzie szukać duplikatów?", root,
                           [this, alive = alive.flag](QString directory) {
                             if (*alive && !directory.isEmpty() && !shuttingDown)
-                              searchIn(directory);
+                              selectRoot(directory);
                           });
   }
   void copy() {
@@ -1336,8 +1360,9 @@ FileOpsDialog::FileOpsDialog(const QString &photo, bool duplicates,
   }
   d->message = wrapped(
       duplicates
-          ? "Identyczność: nazwa + wielkość + MD5. Wskaż katalog. Przenoszenie "
-            "do kosza wymaga dodatkowego potwierdzenia."
+          ? "Identyczność: nazwa + wielkość + MD5. Wskaż katalog i kliknij "
+            "„Rozpocznij wyszukiwanie”. Przenoszenie do kosza wymaga "
+            "dodatkowego potwierdzenia."
           : "Wybierz miejsce zapisania kopii. Oryginał pozostanie bez zmian.");
   gtk_box_append(GTK_BOX(d->s.body), d->message);
   d->destinationLabel =
@@ -1378,6 +1403,14 @@ FileOpsDialog::FileOpsDialog(const QString &photo, bool duplicates,
                              impl->chooseDestination();
                          });
   gtk_box_append(GTK_BOX(row), d->choose);
+  if (duplicates) {
+    d->startButton = Ui::button("search", "&Rozpocznij wyszukiwanie", {}, [impl] {
+      if (!impl->root.isEmpty())
+        impl->searchIn(impl->root);
+    });
+    Gx::addClass(d->startButton, "suggested");
+    gtk_box_append(GTK_BOX(row), d->startButton);
+  }
   gtk_box_append(GTK_BOX(row), spacer());
   d->action = Ui::button(duplicates ? "trash" : "copyFiles",
                          duplicates ? "Do &kosza" : "&Zapisz kopię", {}, [impl] {
@@ -1399,7 +1432,18 @@ FileOpsDialog::FileOpsDialog(const QString &photo, bool duplicates,
   });
   gtk_box_append(GTK_BOX(row), d->cancelButton);
   gtk_box_append(GTK_BOX(d->s.body), row);
-  gtk_window_set_focus(d->s.window, d->choose);
+  if (duplicates) {
+    // The library's current folder is the natural first candidate.
+    const bool ready = !d->root.isEmpty() && QFileInfo(d->root).isDir();
+    if (!ready)
+      d->root.clear();
+    else
+      Ui::literal(d->destinationLabel, d->root);
+    gtk_widget_set_sensitive(d->startButton, ready);
+  }
+  gtk_window_set_focus(d->s.window, duplicates && !d->root.isEmpty()
+                                        ? d->startButton
+                                        : d->choose);
   QObject::connect(&d->watcher, &QFutureWatcher<FileResult>::finished, impl,
                    [impl] { impl->finished(); });
 }
@@ -1424,6 +1468,17 @@ void FileOpsDialog::hide() {
 }
 bool FileOpsDialog::searching() const { return d->searching; }
 bool FileOpsDialog::active() const { return d->active; }
+bool FileOpsDialog::canStart() const {
+  return d->startButton && gtk_widget_get_sensitive(d->startButton);
+}
+void FileOpsDialog::selectFolderForTest(const QString &path) {
+  if (d->searching)
+    d->selectRoot(path);
+}
+void FileOpsDialog::startForTest() {
+  if (canStart())
+    g_signal_emit_by_name(d->startButton, "clicked");
+}
 QString FileOpsDialog::messageText() const {
   return Ui::sourceText(d->message);
 }

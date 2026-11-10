@@ -473,9 +473,19 @@ void scenario(const QString &photos, const QString &config,
     check(QFile::copy(source, work + "/a/dup.jpg") &&
               QFile::copy(source, work + "/b/dup.jpg"),
           "duplicate fixtures");
-    FileOpsDialog duplicates({}, true, work, gtkWindow);
+    {
+      FileOpsDialog empty({}, true, {}, gtkWindow);
+      check(!empty.canStart(), "no folder: the start button waits");
+    }
+    FileOpsDialog duplicates({}, true, photos, gtkWindow);
     check(duplicates.searching(), "duplicate mode");
-    duplicates.setDestinationForTest(work);
+    check(duplicates.canStart(), "library folder preselected, start enabled");
+    duplicates.selectFolderForTest(work);
+    check(!duplicates.active() && duplicates.canStart(),
+          "choosing a folder waits for the start button");
+    duplicates.startForTest();
+    check(duplicates.active() && !duplicates.canStart(),
+          "start button runs the search and is disabled meanwhile");
     waitFor([&] { return !duplicates.active(); }, "duplicate scan finished");
     check(duplicates.messageText().startsWith("Znaleziono 1 grup") ||
               duplicates.messageText().startsWith("Wybrany plik: "),

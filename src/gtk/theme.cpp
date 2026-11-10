@@ -297,9 +297,10 @@ void shutdown() {
 }
 QString stylesheet(const Palette &p, int opacityPercent) {
   const double a = PrismSettings::alphaFor(opacityPercent);
-  // Dialogs, menus and tooltips carry text over arbitrary content: they never
-  // become more transparent than this, whatever the chrome slider says.
-  const double solid = std::max(a, 0.90);
+  // Dialogs, menus and tooltips carry text over arbitrary content: they stay
+  // practically opaque, whatever the chrome slider says, so text behind them
+  // never shows through.
+  const double solid = std::max(a, 0.97);
   const QColor bg = p.background, fg = p.foreground, accent = p.accent;
   const QColor raised = mix(bg, fg, p.dark ? 0.08 : 0.04);
   const QColor onAccent =
