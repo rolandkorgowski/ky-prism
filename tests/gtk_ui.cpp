@@ -3,6 +3,8 @@
 //   prism-gtk-test                    assertions only
 //   prism-gtk-test --screenshots DIR  additionally renders PNGs for review
 //   prism-gtk-test --readme-shot PHOTOS OUT.png  main window for the README
+//   prism-gtk-test --stress ROUNDS  memory growth and main-loop stalls while
+//                    copying a 24 Mpx photo to the clipboard and exporting it
 #include "gtkbase.h"
 #include "dialogs.h"
 #include "document.h"
@@ -23,6 +25,7 @@
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
+#include <malloc.h>
 #include <vips/vips8>
 
 namespace {
@@ -389,6 +392,113 @@ void scenario(const QString &photos, const QString &config,
   window.trigger("heart");
   waitFor([&] { return !window.heartSelected(); }, "favourite removed");
 
+  // --- clipboard: the photo as an sRGB PNG and as the file itself ---
+  // (This replaces the session clipboard while the test runs.)
+  {
+    const QString redPath = photos + "/red.jpg";
+    window.open(redPath);
+    waitFor([&] { return window.currentPhoto() == redPath && !first->busy(); },
+            "photo for the clipboard");
+    check(window.trigger("copyImage"), "copy-to-clipboard action");
+    waitFor(
+        [&] {
+          return !window.copyingToClipboard() &&
+                 window.statusText().startsWith("Skopiowano do schowka:");
+        },
+        "clipboard filled");
+    check(window.statusText() ==
+              "Skopiowano do schowka: red.jpg (640 × 480 px)",
+          "full resolution in the clipboard");
+    auto *clipboard = gtk_widget_get_clipboard(GTK_WIDGET(gtkWindow));
+    auto *formats = gdk_clipboard_get_formats(clipboard);
+    check(gdk_content_formats_contain_mime_type(formats, "image/png") &&
+              gdk_content_formats_contain_mime_type(formats, "text/uri-list") &&
+              gdk_content_formats_contain_mime_type(
+                  formats, "x-special/gnome-copied-files"),
+          "clipboard offers the image and the file");
+    struct Read {
+      GdkTexture *texture = nullptr;
+      QStringList files; // copied: the clipboard owns the GFile list
+      int pending = 2;
+    } read;
+    gdk_clipboard_read_texture_async(
+        clipboard, nullptr,
+        +[](GObject *source, GAsyncResult *result, gpointer data) {
+          auto *state = static_cast<Read *>(data);
+          state->texture = gdk_clipboard_read_texture_finish(
+              GDK_CLIPBOARD(source), result, nullptr);
+          --state->pending;
+        },
+        &read);
+    gdk_clipboard_read_value_async(
+        clipboard, GDK_TYPE_FILE_LIST, G_PRIORITY_DEFAULT, nullptr,
+        +[](GObject *source, GAsyncResult *result, gpointer data) {
+          auto *state = static_cast<Read *>(data);
+          if (const GValue *value = gdk_clipboard_read_value_finish(
+                  GDK_CLIPBOARD(source), result, nullptr)) {
+            GSList *list = gdk_file_list_get_files(
+                static_cast<GdkFileList *>(g_value_get_boxed(value)));
+            for (GSList *l = list; l; l = l->next) {
+              g_autofree char *path = g_file_get_path(G_FILE(l->data));
+              state->files.append(QString::fromUtf8(path));
+            }
+            g_slist_free(list);
+          }
+          --state->pending;
+        },
+        &read);
+    waitFor([&] { return read.pending == 0; }, "clipboard read back");
+    check(read.texture && gdk_texture_get_width(read.texture) == 640 &&
+              gdk_texture_get_height(read.texture) == 480,
+          "pasted image has the photo's size");
+    QImage pasted(640, 480, QImage::Format_ARGB32_Premultiplied);
+    gdk_texture_download(read.texture, pasted.bits(), gsize(pasted.bytesPerLine()));
+    const QColor middle = pasted.pixelColor(320, 240);
+    check(near(middle.red(), 200, 3) && near(middle.green(), 40, 3) &&
+              near(middle.blue(), 30, 3) && middle.alpha() == 255,
+          "pasted image keeps the photo's colours");
+    g_object_unref(read.texture);
+    check(read.files == QStringList{redPath}, "pasted file is the photo itself");
+
+    // --- export: byte-identical copy, extension kept, never overwrites ---
+    const QString target = work + "/eksport-red";
+    window.exportTo(target);
+    waitFor(
+        [&] {
+          return !window.exporting() &&
+                 window.statusText().startsWith("Wyeksportowano kopię:");
+        },
+        "export finished");
+    QFile original(redPath), exported(target + ".jpg");
+    check(original.open(QIODevice::ReadOnly) &&
+              exported.open(QIODevice::ReadOnly) &&
+              original.readAll() == exported.readAll(),
+          "export is byte-identical, with the original extension");
+    window.exportTo(target + ".jpg");
+    check(window.statusText().startsWith("Nie wyeksportowano:") &&
+              !window.exporting(),
+          "export never overwrites an existing file");
+    pump(300);
+    closeDialog(dialogOf(gtkWindow));
+
+    // --- right-click menu on the photo ---
+    window.showPhotoMenu(120, 120);
+    pump(300);
+    GtkWidget *menu = nullptr;
+    std::function<void(GtkWidget *)> find = [&](GtkWidget *w) {
+      if (GTK_IS_POPOVER(w) && gtk_widget_has_css_class(w, "prism-menu"))
+        menu = w;
+      for (auto *c = gtk_widget_get_first_child(w); c && !menu;
+           c = gtk_widget_get_next_sibling(c))
+        find(c);
+    };
+    find(GTK_WIDGET(gtkWindow));
+    check(menu && gtk_widget_get_visible(menu), "photo menu opens");
+    shot(menu, "19-photo-menu");
+    gtk_popover_popdown(GTK_POPOVER(menu));
+    pump(150);
+  }
+
   // --- language ---
   window.trigger("language");
   waitFor([&] { return PrismLanguage::english(); }, "switched to English");
@@ -522,6 +632,120 @@ void readmeShot(const QString &photos, const QString &out) {
   shot(content(window.window()), QFileInfo(out).completeBaseName());
   window.close();
 }
+long rssKiB() {
+  // Return freed heap pages first: measure what is held, not fragmentation.
+  malloc_trim(0);
+  QFile status("/proc/self/status");
+  if (!status.open(QIODevice::ReadOnly))
+    return -1;
+  for (const auto &line : status.readAll().split('\n'))
+    if (line.startsWith("VmRSS:"))
+      return line.mid(6).trimmed().split(' ').value(0).toLong();
+  return -1;
+}
+// Runs the main loop until `done`, recording the longest single dispatch: a
+// stall the user would feel as a frozen window.
+qint64 longestStall = 0;
+QString stallPhase;
+void runUntil(const std::function<bool()> &done, const char *what,
+              int timeout = 60000) {
+  const qint64 before = longestStall;
+  longestStall = 0;
+  QElapsedTimer total, step;
+  total.start();
+  while (!done() && total.elapsed() < timeout) {
+    step.start();
+    while (g_main_context_iteration(nullptr, FALSE)) {
+      longestStall = std::max(longestStall, step.elapsed());
+      step.start();
+    }
+    g_usleep(1000);
+  }
+  if (longestStall >= 100)
+    std::cout << "  stall " << longestStall << " ms during: " << what << "\n";
+  longestStall = std::max(before, longestStall);
+  if (!done())
+    throw std::runtime_error(std::string("timeout: ") + what);
+}
+int stress(const QString &work, int rounds) {
+  // 24 Mpx with noise: realistic decode and PNG sizes, nothing compresses away.
+  const QString big = work + "/big.jpg", small = work + "/small.jpg";
+  vips::VImage::gaussnoise(6000, 4000,
+                           vips::VImage::option()->set("mean", 128.0)->set(
+                               "sigma", 40.0))
+      .bandjoin({vips::VImage::gaussnoise(6000, 4000),
+                 vips::VImage::gaussnoise(6000, 4000)})
+      .cast(VIPS_FORMAT_UCHAR)
+      .copy(vips::VImage::option()->set("interpretation",
+                                        VIPS_INTERPRETATION_sRGB))
+      .jpegsave(big.toUtf8().constData(), vips::VImage::option()->set("Q", 90));
+  solid(small, 1600, 1200, {180, 150, 90});
+  PrismWindow window;
+  window.show();
+  runUntil([&] { return gtk_widget_get_mapped(GTK_WIDGET(window.window())); },
+           "window mapped");
+  const auto view = window.primaryView();
+  QList<long> rss;
+  const QString only = qEnvironmentVariable("PRISM_STRESS_ONLY");
+  const bool doCopy = only.isEmpty() || only == "copy",
+             doExport = only.isEmpty() || only == "export";
+  for (int round = 0; round < rounds; ++round) {
+    window.open(small);
+    runUntil([&] { return window.currentPhoto() == small && !view->busy(); },
+             "small photo");
+    window.open(big);
+    runUntil([&] {
+      return window.currentPhoto() == big && !view->busy() &&
+             view->imageSize() == QSize(6000, 4000);
+    }, "big photo");
+    pump(200);
+    const long opened = rssKiB();
+    if (doCopy) {
+      window.trigger("copyImage");
+      runUntil([&] {
+        return !window.copyingToClipboard() &&
+               window.statusText().startsWith("Skopiowano do schowka:");
+      }, "clipboard copy");
+    }
+    pump(200);
+    const long copied = rssKiB();
+    if (doExport) {
+      const QString target = work + QString("/export-%1.jpg").arg(round);
+      window.exportTo(target);
+      runUntil([&] {
+        return !window.exporting() &&
+               window.statusText().startsWith("Wyeksportowano kopię:");
+      }, "export");
+      QFile::remove(target);
+    }
+    pump(200);
+    rss.append(rssKiB());
+    std::cout << "round " << round + 1 << ": RSS after open " << opened / 1024
+              << " MiB, after copy " << copied / 1024 << " MiB, after export "
+              << rss.last() / 1024 << " MiB, longest stall " << longestStall
+              << " ms\n";
+    if (round == 0)
+      longestStall = 0; // first GL frame, window mapping: measured above
+  }
+  window.close();
+  pump(200);
+  // The first half warms bounded caches (previews, tiles, thumbnails); the
+  // second half must stay flat. Averages smooth out allocator noise.
+  auto average = [&](int from, int count) {
+    long sum = 0;
+    for (int i = from; i < from + count; ++i)
+      sum += rss.at(i);
+    return sum / std::max(1, count);
+  };
+  const int n = int(rss.size()), window3 = std::min(3, n);
+  const long growth = average(n - window3, window3) -
+                      average(std::max(0, n / 2 - 1), window3);
+  std::cout << "stress: growth over the second half " << growth / 1024
+            << " MiB, longest stall " << longestStall << " ms\n";
+  // The first round includes the first GL frame (shader compilation when the
+  // driver's cache is cold); every later round must keep the window fluid.
+  return growth < 64 * 1024 && longestStall < 250 ? 0 : 1;
+}
 } // namespace
 
 int main(int argc, char **argv) {
@@ -533,12 +757,25 @@ int main(int argc, char **argv) {
     QDir().mkpath(home.path() + "/" + name);
   qputenv("XDG_DATA_HOME", (home.path() + "/data").toUtf8());
   qputenv("XDG_CONFIG_HOME", (home.path() + "/config").toUtf8());
+  // The GPU driver's compiled-shader cache stays where it normally is: a
+  // cold cache would add a one-time compile stall that users do not see.
+  const QString userCache = qEnvironmentVariableIsEmpty("XDG_CACHE_HOME")
+                                ? QDir::homePath() + "/.cache"
+                                : qEnvironmentVariable("XDG_CACHE_HOME");
+  if (qEnvironmentVariableIsEmpty("__GL_SHADER_DISK_CACHE_PATH"))
+    qputenv("__GL_SHADER_DISK_CACHE_PATH", (userCache + "/nvidia").toUtf8());
+  if (qEnvironmentVariableIsEmpty("MESA_SHADER_CACHE_DIR"))
+    qputenv("MESA_SHADER_CACHE_DIR", (userCache + "/mesa_shader_cache").toUtf8());
   qputenv("XDG_CACHE_HOME", (home.path() + "/cache").toUtf8());
   qputenv("PRISM_LANGUAGE", "pl");
   qunsetenv("PRISM_UI_OPACITY");
   if (qEnvironmentVariableIsEmpty("GSK_RENDERER"))
     qputenv("GSK_RENDERER", "gl");
   QString readmePhotos, readmeOut;
+  int stressRounds = 0;
+  for (int i = 1; i + 1 < argc; ++i)
+    if (QString(argv[i]) == "--stress")
+      stressRounds = std::max(1, QString(argv[i + 1]).toInt());
   for (int i = 1; i + 2 < argc; ++i)
     if (QString(argv[i]) == "--readme-shot") {
       readmePhotos = QString::fromLocal8Bit(argv[i + 1]);
@@ -562,6 +799,16 @@ int main(int argc, char **argv) {
   vips_cache_set_max(0);
   int result = 0;
   try {
+    if (stressRounds) {
+      PrismLanguage::initialize();
+      Theme::install();
+      result = stress(home.path() + "/work", stressRounds);
+      Theme::shutdown();
+      NvjpegBackend::shutdown();
+      Document::clearSharedPreviews();
+      vips_shutdown();
+      return result;
+    }
     if (!readmePhotos.isEmpty()) {
       PrismLanguage::initialize();
       Theme::install();

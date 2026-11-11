@@ -26,7 +26,7 @@ struct Tile {
 class Document {
   vips::VImage original;
   QString identity;
-  bool jpeg = false;
+  bool jpeg = false, alpha = false;
   quint64 materializedBytes = 0;
   std::shared_ptr<std::atomic_bool> cancellation;
   std::map<int, vips::VImage> levels;
@@ -38,6 +38,9 @@ public:
             const std::function<void(const Info &)> &earlyPreview = {},
             int previewEdge = 2048, QSize viewportPixels = {});
   Tile tile(int level, int x, int y);
+  // The opened photograph (orientation applied, in the profile given to
+  // open) as an 8-bit PNG, downscaled to at most `maxPixels` when larger.
+  QByteArray encodePng(qint64 maxPixels, QSize *encoded = nullptr);
   void clear();
   static int previewBucket(int edge);
   static int sharedPreviewKiB();

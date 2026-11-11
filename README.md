@@ -100,6 +100,11 @@ To see what is missing without installing anything:
   management.
 - Library with list and thumbnail views, natural sorting, tabs and
   side-by-side comparison of two photos.
+- Copy the displayed photo to the clipboard (`Ctrl+C`): paste it as an image
+  into editors and messengers, or as a file into a file manager.
+- Export a byte-identical copy of the file, EXIF included, to a place and
+  name you choose (`Ctrl+E`). Existing files are never overwritten.
+- Right-click menu on the photo: copy, export, favourites, EXIF, full screen.
 - Favourites, bookmarks, EXIF panel, copying to USB drives and duplicate
   search. Originals are never modified.
 - Adjustable interface opacity (`Ctrl+Alt+O`). It changes only the toolbars
@@ -141,8 +146,11 @@ Aktualizacja: `cd ky-prism && git pull && ./run.sh install`.
 ./run.sh run ~/Pictures/photo.jpg
 ```
 
-`./run.sh test` also opens a real ky-prism window for about 12 seconds
-(the `gtk_ui` test). Change history and engineering notes are in
+`./run.sh test` also opens a real ky-prism window for about 15 seconds
+(the `gtk_ui` test; it also uses the clipboard). For stability checks,
+`./run.sh gtk-test --stress 20` repeatedly opens a 24-megapixel photo,
+copies it to the clipboard and exports it, printing memory use and the
+longest pause of the window per round. Change history and engineering notes are in
 [docs/HISTORY.md](docs/HISTORY.md) (in Polish).
 
 ## License

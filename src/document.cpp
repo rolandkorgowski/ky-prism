@@ -113,8 +113,9 @@ static VImage displayImage(VImage source, const QString &profile,
     fail("Nieobsługiwana liczba kanałów po konwersji ICC.");
   return source;
 }
-static QImage pixels(VImage image,
-                     const std::shared_ptr<std::atomic_bool> &token = {}) {
+// Stop a libvips evaluation of `image` as soon as `token` is set.
+static void killOnCancel(VImage &image,
+                         const std::shared_ptr<std::atomic_bool> &token) {
   if (token) {
     vips_image_set_progress(image.get_image(), true);
     auto owner = new std::shared_ptr<std::atomic_bool>(token);
@@ -130,7 +131,10 @@ static QImage pixels(VImage image,
         },
         GConnectFlags(0));
   }
-
+}
+static QImage pixels(VImage image,
+                     const std::shared_ptr<std::atomic_bool> &token = {}) {
+  killOnCancel(image, token);
   size_t bytes = 0;
   void *data = image.write_to_memory(&bytes);
   // Transfer the allocation to Qt instead of copying every decoded image again.
@@ -151,6 +155,37 @@ static VImage imageFromPixels(const QImage &pixels) {
       +[](void *p) { delete static_cast<QImage *>(p); });
   return VImage(image).copy(
       VImage::option()->set("interpretation", VIPS_INTERPRETATION_RGB16));
+}
+QByteArray Document::encodePng(qint64 maxPixels, QSize *encoded) {
+  if (!original.get_image())
+    fail("Brak otwartego zdjęcia.");
+  VImage image = original;
+  const double count = double(image.width()) * double(image.height());
+  if (maxPixels > 0 && count > double(maxPixels))
+    image = image.resize(std::sqrt(double(maxPixels) / count),
+                         VImage::option()->set("kernel", VIPS_KERNEL_LANCZOS3));
+  // The canvas works in 16 bit; the clipboard's PNG is the common 8-bit sRGB.
+  image = (image / 257.0).rint().cast(VIPS_FORMAT_UCHAR);
+  if (!alpha)
+    image = image.extract_band(0, VImage::option()->set("n", 3));
+  image = image.copy(
+      VImage::option()->set("interpretation", VIPS_INTERPRETATION_sRGB));
+  killOnCancel(image, cancellation);
+  void *data = nullptr;
+  size_t length = 0;
+  image.write_to_buffer(".png", &data, &length,
+                        VImage::option()
+                            ->set("compression", 1)
+                            ->set("keep", VIPS_FOREIGN_KEEP_NONE));
+  if (cancellation && cancellation->load()) {
+    g_free(data);
+    fail("Anulowano");
+  }
+  QByteArray result(static_cast<const char *>(data), qsizetype(length));
+  g_free(data);
+  if (encoded)
+    *encoded = {image.width(), image.height()};
+  return result;
 }
 void Document::clear() {
 
@@ -348,6 +383,7 @@ Info Document::open(const QString &path, const QString &profile,
   }
   if (cancel->load())
     fail("Anulowano");
+  alpha = source.has_alpha();
   source = displayImage(source, profile, note);
   original = source;
   levels.emplace(0, original);

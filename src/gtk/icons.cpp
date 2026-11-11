@@ -456,6 +456,27 @@ void draw(cairo_t *cr, const QString &name, double x, double y, double size,
     p.line(15, 8, 18.5, 8);
     p.line(15, 12, 20, 12);
     p.line(15, 16, 18.5, 16);
+  } else if (name == "clipboard") {
+    // Clipboard board with a small landscape: "copy the picture".
+    p.setBrush(soft);
+    p.roundedRect(4, 4, 16, 18, 2.5);
+    p.setBrush(paper);
+    p.roundedRect(8.5, 2, 7, 4, 1.5);
+    p.noBrush();
+    p.polyline({7, 18, 10.5, 13.5, 13, 16, 14.5, 14.5, 17, 18});
+    p.circle(15, 10.5, 1.3);
+  } else if (name == "export") {
+    // Tray with an upward arrow: a copy of the file leaves for a new place.
+    p.polyline({4, 14, 4, 20, 20, 20, 20, 14});
+    p.line(12, 16, 12, 3.5);
+    p.polyline({7.5, 8, 12, 3.5, 16.5, 8});
+  } else if (name == "heart") {
+    p.path([](cairo_t *c) {
+      cairo_move_to(c, 12, 20);
+      cairo_curve_to(c, 2, 13, 4, 4, 12, 8);
+      cairo_curve_to(c, 20, 4, 22, 13, 12, 20);
+      cairo_close_path(c);
+    });
   } else if (name == "search") {
     p.ellipse(4, 4, 12, 12);
     p.line(14.5, 14.5, 20, 20);

@@ -23,6 +23,8 @@ nie przechwytują wpisywania tekstu w ścieżkach i filtrach.
 | Ctrl+Shift+B | Przeglądarka zakładek |
 | Ctrl+Shift+H | Dodaj / usuń bieżące zdjęcie z ulubionych (serce) |
 | Ctrl+Shift+F | Przeglądarka ulubionych |
+| Ctrl+C | Kopiuj wyświetlone zdjęcie do schowka: obraz (edytory, komunikatory) i plik (menedżer plików) |
+| Ctrl+E | Eksportuj kopię pliku: systemowe okno „Zapisz jako”, kopia bajt w bajt z EXIF |
 | Ctrl+Shift+C | Kopiuj zaznaczone pliki; bez zaznaczenia bieżące zdjęcie |
 | Ctrl+Shift+D | Wyszukiwanie duplikatów |
 | Ctrl+I | Pokaż / ukryj EXIF |
@@ -47,7 +49,9 @@ Gdy fokus jest **na zdjęciu**:
 W lewej liście strzałki wybierają pozycję, a Enter otwiera plik lub katalog.
 F6 przenosi fokus z listy do ścieżki i dalej do zdjęcia (lub widocznego EXIF).
 W polach tekstowych działają zwykłe skróty edycji, m.in. Ctrl+A/C/V/X/Z.
-Ctrl+C kopiuje zaznaczony tekst; kopiowanie zdjęcia używa osobnego Ctrl+Shift+C.
+Ctrl+C w polu tekstowym lub w zaznaczonym tekście kopiuje ten tekst; poza nimi
+kopiuje wyświetlone zdjęcie do schowka. Prawy przycisk myszy na zdjęciu otwiera
+menu: kopiuj do schowka, eksportuj kopię pliku, ulubione, EXIF, pełny ekran.
 
 ## Zakładki i ulubione
 

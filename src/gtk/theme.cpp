@@ -414,6 +414,9 @@ scale.prism-scale:focus-visible > trough > slider { box-shadow: 0 0 0 3px ACCENT
 popover.prism-popover > contents { background-color: SOLID; color: FG; border: 1px solid EDGE2; border-radius: 13px; padding: 14px; box-shadow: 0 6px 24px rgba(0,0,0,0.35); }
 popover.prism-popover > arrow { background-color: SOLID; border: 1px solid EDGE2; }
 popover.prism-popover label { color: FG; }
+popover.prism-menu > contents { padding: 6px; }
+popover.prism-menu button { min-width: 230px; min-height: 34px; padding: 0 10px; }
+popover.prism-menu separator { margin: 4px 6px; background-color: FG10; }
 tooltip { background-color: TIP; border: 1px solid EDGE2; border-radius: 8px; padding: 4px 8px; box-shadow: none; }
 tooltip, tooltip label { color: FG; }
 

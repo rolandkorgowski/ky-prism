@@ -590,6 +590,10 @@ struct LibraryPane::Impl : QObject {
     sizeColumn = gtk_column_view_column_new(nullptr, sizeFactory());
     gtk_column_view_column_set_fixed_width(sizeColumn, 92);
     gtk_column_view_append_column(GTK_COLUMN_VIEW(columnView), sizeColumn);
+    // The column view holds its columns; drop the creation references so the
+    // columns die with the view (they leaked once per window before).
+    g_object_unref(nameColumn);
+    g_object_unref(sizeColumn);
     Ui::accessible(columnView, "Pliki i katalogi zdjęć");
     Gx::connect(columnView, "activate",
                      +[](GtkColumnView *, guint position,

@@ -56,4 +56,10 @@ public:
   void setSort(int column, bool descending);
   void setLibraryMode(bool thumbnails);
   void selectTab(int index);
+  // Tests: export the displayed photo without the system chooser; worker
+  // state of the export and the clipboard copy; right-click menu at a point.
+  void exportTo(const QString &target);
+  bool exporting() const;
+  bool copyingToClipboard() const;
+  void showPhotoMenu(double x, double y);
 };

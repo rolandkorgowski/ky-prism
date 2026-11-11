@@ -1,7 +1,9 @@
 #include "window.h"
 #include "browser_history.h"
 #include "dialogs.h"
+#include "document.h"
 #include "favorites.h"
+#include "file_ops_core.h"
 #include "icons.h"
 #include "language.h"
 #include "library_pane.h"
@@ -51,6 +53,22 @@ GtkWidget *expander() {
   gtk_widget_set_hexpand(widget, TRUE);
   return widget;
 }
+// Clipboard copy of the displayed photograph, prepared off the main thread.
+struct ClipboardImage {
+  QString path, error;
+  QByteArray png;
+  QSize size, original;
+  bool cancelled = false;
+};
+// Larger photographs are downscaled for the clipboard: 50 Mpx is about
+// 200 MB of pixels in the applications that receive it.
+constexpr qint64 clipboardPixels = 50'000'000;
+GBytes *bytesOf(QByteArray data) {
+  auto *owner = new QByteArray(std::move(data));
+  return g_bytes_new_with_free_func(
+      owner->constData(), gsize(owner->size()),
+      +[](gpointer p) { delete static_cast<QByteArray *>(p); }, owner);
+}
 } // namespace
 
 struct PrismWindow::Impl : QObject {
@@ -85,6 +103,8 @@ struct PrismWindow::Impl : QObject {
   std::unique_ptr<BookmarksDialog> bookmarksDialog;
   std::unique_ptr<AboutDialog> aboutDialog;
   std::unique_ptr<FileOpsDialog> fileDialog;
+  GtkWidget *photoMenu = nullptr, *menuCopy = nullptr, *menuExport = nullptr,
+            *menuHeart = nullptr;
   std::unique_ptr<UsbAccess> usb;
   QMap<QString, Gx::Callback> actionMap;
 
@@ -99,7 +119,14 @@ struct PrismWindow::Impl : QObject {
   QStringList siblings;
   QList<TabState> tabStates;
   BrowserHistory history;
-  QThreadPool storagePool, scanPool;
+  QThreadPool storagePool, scanPool, clipboardPool, exportPool;
+  QFutureWatcher<ClipboardImage> clipboardWatcher;
+  QFutureWatcher<FileResult> exportWatcher;
+  std::shared_ptr<std::atomic_bool> clipboardCancel =
+      std::make_shared<std::atomic_bool>(true);
+  std::shared_ptr<std::atomic_bool> exportCancel =
+      std::make_shared<std::atomic_bool>(true);
+  QString exportFolder;
   std::shared_ptr<std::atomic_bool> scanCancelled =
       std::make_shared<std::atomic_bool>(false);
   QFutureWatcher<QString> storageWatcher;
@@ -705,6 +732,228 @@ struct PrismWindow::Impl : QObject {
       fileDialog->setSources(selectedPhotos());
     fileDialog->present();
   }
+  // ------------------------------------------------- clipboard / export ---
+  // The clipboard offers the photograph twice: as a PNG image (editors,
+  // browsers, messengers) and as the file itself (file managers paste a copy).
+  void copyToClipboard() {
+    if (isShuttingDown)
+      return;
+    const QString photo = activePhoto();
+    if (photo.isEmpty()) {
+      setStatus("Najpierw otwórz zdjęcie.");
+      return;
+    }
+    clipboardCancel->store(true);
+    auto token = std::make_shared<std::atomic_bool>(false);
+    clipboardCancel = token;
+    setStatus(QString("Kopiowanie do schowka: %1…").arg(QFileInfo(photo).fileName()));
+    clipboardWatcher.setFuture(QtConcurrent::run(&clipboardPool, [photo, token] {
+      ClipboardImage result;
+      result.path = photo;
+      try {
+        // Same decoder as the canvas (EXIF orientation, ICC), sRGB output.
+        Document document;
+        result.original = document.open(photo, {}, token, {}, 256).size;
+        result.png = document.encodePng(clipboardPixels, &result.size);
+      } catch (const std::exception &e) {
+        result.error = QString::fromUtf8(e.what());
+      }
+      result.cancelled = token->load();
+      return result;
+    }));
+  }
+  void clipboardReady() {
+    if (isShuttingDown)
+      return;
+    auto result = clipboardWatcher.result();
+    if (result.cancelled)
+      return;
+    const QString name = QFileInfo(result.path).fileName();
+    if (!result.error.isEmpty() || result.png.isEmpty()) {
+      setStatus(QString("Nie skopiowano do schowka: %1").arg(result.error));
+      return;
+    }
+    g_autoptr(GFile) file = g_file_new_for_path(Gx::u8(result.path).constData());
+    g_autofree char *uri = g_file_get_uri(file);
+    GBytes *image = bytesOf(std::move(result.png));
+    GBytes *uris = bytesOf(QByteArray(uri) + "\r\n");
+    GBytes *gnome = bytesOf("copy\n" + QByteArray(uri));
+    GdkContentProvider *providers[] = {
+        gdk_content_provider_new_for_bytes("image/png", image),
+        gdk_content_provider_new_for_bytes("text/uri-list", uris),
+        gdk_content_provider_new_for_bytes("x-special/gnome-copied-files", gnome)};
+    g_bytes_unref(image);
+    g_bytes_unref(uris);
+    g_bytes_unref(gnome);
+    auto *content = gdk_content_provider_new_union(providers, 3);
+    gdk_clipboard_set_content(gtk_widget_get_clipboard(GTK_WIDGET(window)),
+                              content);
+    g_object_unref(content);
+    if (result.size != result.original)
+      setStatus(QString("Skopiowano do schowka: %1 (%2 × %3 px, zmniejszone z "
+                        "%4 × %5 px)")
+                    .arg(name)
+                    .arg(result.size.width())
+                    .arg(result.size.height())
+                    .arg(result.original.width())
+                    .arg(result.original.height()));
+    else
+      setStatus(QString("Skopiowano do schowka: %1 (%2 × %3 px)")
+                    .arg(name)
+                    .arg(result.size.width())
+                    .arg(result.size.height()));
+  }
+  // Export = a byte-identical copy (EXIF included) under a chosen name.
+  void exportPhoto() {
+    if (isShuttingDown)
+      return;
+    const QString photo = activePhoto();
+    if (photo.isEmpty()) {
+      setStatus("Najpierw otwórz zdjęcie.");
+      return;
+    }
+    if (exportWatcher.isRunning()) {
+      setStatus("Eksport już trwa.");
+      return;
+    }
+    const QFileInfo info(photo);
+    const QString folder =
+        QFileInfo(exportFolder).isDir() ? exportFolder : info.absolutePath();
+    Dialogs::chooseSaveFile(window, "Eksportuj kopię zdjęcia", folder,
+                            info.fileName(),
+                            [this, photo, live = alive](QString target) {
+                              if (*live && !target.isEmpty() && !isShuttingDown)
+                                exportTo(photo, target);
+                            });
+  }
+  void exportTo(const QString &photo, QString target) {
+    if (isShuttingDown || photo.isEmpty() || exportWatcher.isRunning())
+      return;
+    const QString suffix = QFileInfo(photo).suffix();
+    if (QFileInfo(target).suffix().isEmpty() && !suffix.isEmpty())
+      target += "." + suffix;
+    exportFolder = QFileInfo(target).absolutePath();
+    const QFileInfo existing(target);
+    if (existing.exists() || existing.isSymLink()) {
+      Dialogs::message(window, "Plik już istnieje",
+                       "ky-prism nie nadpisuje istniejących plików.", target,
+                       {"&Anuluj", "Wybierz &inną nazwę"}, 1, 0,
+                       [this, live = alive](int choice) {
+                         if (*live && choice == 1 && !isShuttingDown)
+                           exportPhoto();
+                       });
+      setStatus(QString("Nie wyeksportowano: %1 już istnieje.").arg(target));
+      return;
+    }
+    exportCancel->store(true);
+    auto token = std::make_shared<std::atomic_bool>(false);
+    exportCancel = token;
+    setStatus(QString("Eksport: %1…").arg(target));
+    auto report = [this, token](qint64 done, qint64 total) {
+      QMetaObject::invokeMethod(
+          this,
+          [this, token, done, total] {
+            if (token == exportCancel && !token->load() && !isShuttingDown &&
+                total > 0)
+              setStatus(QString("Eksport: %1 / %2 MiB")
+                            .arg(done / 1048576.0, 0, 'f', 1)
+                            .arg(total / 1048576.0, 0, 'f', 1));
+          },
+          Qt::QueuedConnection);
+    };
+    exportWatcher.setFuture(
+        QtConcurrent::run(&exportPool, [photo, target, token, report] {
+          try {
+            FileOps::copy(photo, target, token, report);
+            return FileResult{{}, {}, target, false};
+          } catch (const std::exception &e) {
+            return FileResult{{}, QString::fromUtf8(e.what()), target,
+                              token->load()};
+          }
+        }));
+  }
+  void exportFinished() {
+    if (isShuttingDown)
+      return;
+    const auto result = exportWatcher.result();
+    if (result.cancelled)
+      setStatus("Eksport anulowany.");
+    else if (!result.error.isEmpty())
+      setStatus(QString("Eksport nieudany: %1").arg(result.error));
+    else
+      setStatus(QString("Wyeksportowano kopię: %1").arg(result.message));
+  }
+  // Right-click menu on a photograph.
+  void buildPhotoMenu() {
+    photoMenu = gtk_popover_new();
+    Gx::addClass(photoMenu, "prism-popover");
+    Gx::addClass(photoMenu, "prism-menu");
+    gtk_popover_set_has_arrow(GTK_POPOVER(photoMenu), FALSE);
+    gtk_popover_set_position(GTK_POPOVER(photoMenu), GTK_POS_BOTTOM);
+    gtk_widget_set_halign(photoMenu, GTK_ALIGN_START);
+    auto *box = Gx::vbox(2);
+    auto item = [&](const QString &symbol, const QString &caption,
+                    const QString &tip, const QString &action) {
+      auto *button = Ui::button(symbol, caption, tip, [this, action] {
+        gtk_popover_popdown(GTK_POPOVER(photoMenu));
+        Gx::later([this, action, live = alive] {
+          if (*live && !isShuttingDown)
+            q->trigger(action);
+        });
+      });
+      Gx::addClass(button, "flat");
+      if (auto *child = gtk_button_get_child(GTK_BUTTON(button)))
+        gtk_widget_set_halign(child, GTK_ALIGN_START);
+      gtk_box_append(GTK_BOX(box), button);
+      return button;
+    };
+    menuCopy = item("clipboard", "Kopiuj do schowka", "Ctrl+C", "copyImage");
+    menuExport = item("export", "Eksportuj kopię pliku…", "Ctrl+E", "export");
+    gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+    menuHeart = item("heart", "Dodaj do ulubionych", "Ctrl+Shift+H", "heart");
+    item("exif", "Informacje EXIF", "Ctrl+I", "exif");
+    item("fullscreen", "Pełny ekran", "F11", "fullscreen");
+    gtk_popover_set_child(GTK_POPOVER(photoMenu), box);
+    gtk_widget_set_parent(photoMenu, root);
+  }
+  void showPhotoMenu(PhotoView *target, double x, double y) {
+    if (isShuttingDown || !photoMenu)
+      return;
+    viewFocused(target);
+    const bool photo = !activePhoto().isEmpty();
+    gtk_widget_set_sensitive(menuCopy, photo);
+    gtk_widget_set_sensitive(menuExport, photo);
+    gtk_widget_set_sensitive(menuHeart, photo && !favorites->busy());
+    Ui::text(Ui::buttonLabel(menuHeart), heartIsSelected ? "Usuń z ulubionych"
+                                                         : "Dodaj do ulubionych");
+    graphene_point_t point;
+    const graphene_point_t local = GRAPHENE_POINT_INIT(float(x), float(y));
+    if (!gtk_widget_compute_point(target->widget(), root, &local, &point))
+      return;
+    const GdkRectangle at{int(point.x), int(point.y), 1, 1};
+    gtk_popover_set_pointing_to(GTK_POPOVER(photoMenu), &at);
+    gtk_popover_popup(GTK_POPOVER(photoMenu));
+  }
+  void attachPhotoMenu(PhotoView *target) {
+    auto *click = gtk_gesture_click_new();
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click), GDK_BUTTON_SECONDARY);
+    struct Context {
+      Impl *self;
+      PhotoView *view;
+    };
+    g_signal_connect_data(
+        click, "pressed",
+        reinterpret_cast<GCallback>(
+            +[](GtkGestureClick *, int, double x, double y, gpointer data) {
+              auto *context = static_cast<Context *>(data);
+              context->self->showPhotoMenu(context->view, x, y);
+            }),
+        new Context{this, target},
+        +[](gpointer data, GClosure *) { delete static_cast<Context *>(data); },
+        GConnectFlags(0));
+    gtk_widget_add_controller(target->widget(), GTK_EVENT_CONTROLLER(click));
+  }
+
   void showFavorites() {
     if (!favoritesDialog) {
       favoritesDialog = std::make_unique<FavoritesDialog>(favorites, window);
@@ -1020,6 +1269,14 @@ struct PrismWindow::Impl : QObject {
 
     auto *work = group();
     tool(work, "newTab", "", "Nowa karta • Ctrl+T", "newTab");
+    auto *clipboard = tool(work, "clipboard", "",
+                           "Kopiuj zdjęcie do schowka • Ctrl+C", "copyImage");
+    Ui::accessible(clipboard, "Kopiuj zdjęcie do schowka");
+    auto *exportButton =
+        tool(work, "export", "",
+             "Eksportuj kopię pliku — wybierz miejsce i nazwę • Ctrl+E",
+             "export");
+    Ui::accessible(exportButton, "Eksportuj kopię pliku");
     auto *copy = tool(
         work, "copyFiles", "",
         "Kopiuj zaznaczone zdjęcia • Ctrl+Shift+C • Ctrl/Shift: wiele plików",
@@ -1229,6 +1486,8 @@ struct PrismWindow::Impl : QObject {
     compareView = std::make_unique<PhotoView>(
         "Drugie zdjęcie — niezależny zoom i przesuwanie");
     selectedView = view.get();
+    attachPhotoMenu(view.get());
+    attachPhotoMenu(compareView.get());
     primaryPanel = Gx::vbox();
     primaryCaptionBar = captionBar(&primaryCaption, false);
     gtk_widget_set_visible(primaryCaptionBar, FALSE);
@@ -1344,6 +1603,8 @@ struct PrismWindow::Impl : QObject {
                 int(tabStates.size()));
     };
     a["copy"] = [this] { showFileDialog(false); };
+    a["copyImage"] = [this] { copyToClipboard(); };
+    a["export"] = [this] { exportPhoto(); };
     a["duplicates"] = [this] { showFileDialog(true); };
     a["usb"] = [this] { openUsb(); };
     a["compare"] = [this] { toggleCompare(); };
@@ -1410,6 +1671,10 @@ struct PrismWindow::Impl : QObject {
     key(GDK_KEY_h, Gx::CtrlShift, "heart");
     key(GDK_KEY_f, Gx::CtrlShift, "favorites");
     key(GDK_KEY_c, Gx::CtrlShift, "copy");
+    // Bubble phase: a focused text field or selectable text copies its own
+    // selection first; elsewhere Ctrl+C copies the displayed photograph.
+    key(GDK_KEY_c, Gx::Ctrl, "copyImage", false);
+    key(GDK_KEY_e, Gx::Ctrl, "export");
     key(GDK_KEY_d, Gx::CtrlShift, "duplicates");
     key(GDK_KEY_i, Gx::Ctrl, "exif");
     key(GDK_KEY_m, Gx::Ctrl, "maximize");
@@ -1510,6 +1775,13 @@ struct PrismWindow::Impl : QObject {
     storagePool.setThreadPriority(QThread::LowPriority);
     scanPool.setMaxThreadCount(1);
     scanPool.setThreadPriority(QThread::LowPriority);
+    clipboardPool.setMaxThreadCount(1);
+    exportPool.setMaxThreadCount(1);
+    QObject::connect(&clipboardWatcher,
+                     &QFutureWatcher<ClipboardImage>::finished, this,
+                     [this] { clipboardReady(); });
+    QObject::connect(&exportWatcher, &QFutureWatcher<FileResult>::finished,
+                     this, [this] { exportFinished(); });
     QObject::connect(&storageWatcher, &QFutureWatcher<QString>::finished, this,
                      [this] {
                        storageInFlight = false;
@@ -1653,6 +1925,7 @@ struct PrismWindow::Impl : QObject {
     gtk_box_append(GTK_BOX(root), buildHeader());
     gtk_box_append(GTK_BOX(root), buildToolbar());
     gtk_box_append(GTK_BOX(root), buildTabs());
+    buildPhotoMenu();
 
     content = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_paned_set_start_child(GTK_PANED(content), buildSidebar());
@@ -1729,6 +2002,12 @@ struct PrismWindow::Impl : QObject {
     // completion callback may restart scans/prefetch while another pool drains.
     scanCancelled->store(true);
     scan.disconnect(this);
+    clipboardCancel->store(true);
+    clipboardWatcher.disconnect(this);
+    exportCancel->store(true);
+    exportWatcher.disconnect(this);
+    if (photoMenu)
+      gtk_popover_popdown(GTK_POPOVER(photoMenu));
     storageTimer.stop();
     storageWatcher.disconnect(this);
     opacitySave.stop();
@@ -1780,6 +2059,11 @@ PrismWindow::~PrismWindow() {
   d->maximizeProcess.waitForFinished(500);
   d->storagePool.waitForDone();
   d->scanPool.waitForDone();
+  d->clipboardPool.waitForDone();
+  d->exportPool.waitForDone();
+  if (d->photoMenu)
+    gtk_widget_unparent(d->photoMenu);
+  d->photoMenu = nullptr;
   d->favorites->shutdown();
   d->compareView.reset();
   d->view.reset();
@@ -1788,6 +2072,16 @@ PrismWindow::~PrismWindow() {
   d->window = nullptr;
 }
 GtkWindow *PrismWindow::window() const { return d->window; }
+void PrismWindow::exportTo(const QString &target) {
+  d->exportTo(d->activePhoto(), target);
+}
+bool PrismWindow::exporting() const { return d->exportWatcher.isRunning(); }
+bool PrismWindow::copyingToClipboard() const {
+  return d->clipboardWatcher.isRunning();
+}
+void PrismWindow::showPhotoMenu(double x, double y) {
+  d->showPhotoMenu(d->view.get(), x, y);
+}
 void PrismWindow::show(bool fullscreen) {
   if (fullscreen)
     gtk_window_fullscreen(d->window);
