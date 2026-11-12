@@ -497,6 +497,12 @@ void scenario(const QString &photos, const QString &config,
     shot(menu, "19-photo-menu");
     gtk_popover_popdown(GTK_POPOVER(menu));
     pump(150);
+    check(!gtk_widget_get_visible(menu), "photo menu closes");
+    check(window.trigger("photoMenu"), "keyboard photo-menu action");
+    pump(300);
+    check(gtk_widget_get_visible(menu), "Menu key / Shift+F10 open the menu");
+    gtk_popover_popdown(GTK_POPOVER(menu));
+    pump(150);
   }
 
   // --- language ---

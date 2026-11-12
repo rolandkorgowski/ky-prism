@@ -454,6 +454,7 @@ inline const QHash<QString,QString> &prismEnglishCatalog() {
     {QString::fromUtf8("Eksportuj kopię pliku — wybierz miejsce i nazwę…"),QString::fromUtf8("Export a copy of the file — choose a place and name…")},
     {QString::fromUtf8("Prawy przycisk na zdjęciu"),QString::fromUtf8("Right-click on the photo")},
     {QString::fromUtf8("Menu: kopiuj, eksportuj, ulubione, EXIF"),QString::fromUtf8("Menu: copy, export, favorites, EXIF")},
+    {QString::fromUtf8("Prawy przycisk na zdjęciu / Menu / Shift+F10"),QString::fromUtf8("Right-click on the photo / Menu / Shift+F10")},
   };
   return data;
 }

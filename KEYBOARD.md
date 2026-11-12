@@ -50,8 +50,9 @@ W lewej liście strzałki wybierają pozycję, a Enter otwiera plik lub katalog.
 F6 przenosi fokus z listy do ścieżki i dalej do zdjęcia (lub widocznego EXIF).
 W polach tekstowych działają zwykłe skróty edycji, m.in. Ctrl+A/C/V/X/Z.
 Ctrl+C w polu tekstowym lub w zaznaczonym tekście kopiuje ten tekst; poza nimi
-kopiuje wyświetlone zdjęcie do schowka. Prawy przycisk myszy na zdjęciu otwiera
-menu: kopiuj do schowka, eksportuj kopię pliku, ulubione, EXIF, pełny ekran.
+kopiuje wyświetlone zdjęcie do schowka. Prawy przycisk myszy na zdjęciu, klawisz
+Menu lub Shift+F10 otwiera menu: kopiuj do schowka, eksportuj kopię pliku,
+ulubione, EXIF, pełny ekran.
 
 ## Zakładki i ulubione
 

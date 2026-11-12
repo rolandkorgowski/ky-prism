@@ -934,9 +934,21 @@ struct PrismWindow::Impl : QObject {
     gtk_popover_set_pointing_to(GTK_POPOVER(photoMenu), &at);
     gtk_popover_popup(GTK_POPOVER(photoMenu));
   }
+  // Keyboard (Menu key, Shift+F10): the menu opens near the photo's centre.
+  void showPhotoMenuFromKeyboard() {
+    auto *target = activeView();
+    if (!target || welcomeShown())
+      return;
+    showPhotoMenu(target, gtk_widget_get_width(target->widget()) / 2.0,
+                  gtk_widget_get_height(target->widget()) / 3.0);
+  }
   void attachPhotoMenu(PhotoView *target) {
     auto *click = gtk_gesture_click_new();
     gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click), GDK_BUTTON_SECONDARY);
+    // Capture phase: the right button reaches the menu before any control on
+    // or inside the canvas can consume the press.
+    gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(click),
+                                               GTK_PHASE_CAPTURE);
     struct Context {
       Impl *self;
       PhotoView *view;
@@ -944,7 +956,10 @@ struct PrismWindow::Impl : QObject {
     g_signal_connect_data(
         click, "pressed",
         reinterpret_cast<GCallback>(
-            +[](GtkGestureClick *, int, double x, double y, gpointer data) {
+            +[](GtkGestureClick *gesture, int, double x, double y,
+                gpointer data) {
+              gtk_gesture_set_state(GTK_GESTURE(gesture),
+                                    GTK_EVENT_SEQUENCE_CLAIMED);
               auto *context = static_cast<Context *>(data);
               context->self->showPhotoMenu(context->view, x, y);
             }),
@@ -1605,6 +1620,7 @@ struct PrismWindow::Impl : QObject {
     a["copy"] = [this] { showFileDialog(false); };
     a["copyImage"] = [this] { copyToClipboard(); };
     a["export"] = [this] { exportPhoto(); };
+    a["photoMenu"] = [this] { showPhotoMenuFromKeyboard(); };
     a["duplicates"] = [this] { showFileDialog(true); };
     a["usb"] = [this] { openUsb(); };
     a["compare"] = [this] { toggleCompare(); };
@@ -1675,6 +1691,9 @@ struct PrismWindow::Impl : QObject {
     // selection first; elsewhere Ctrl+C copies the displayed photograph.
     key(GDK_KEY_c, Gx::Ctrl, "copyImage", false);
     key(GDK_KEY_e, Gx::Ctrl, "export");
+    // Bubble phase: text fields keep their own context menu on these keys.
+    key(GDK_KEY_Menu, Gx::NoModifier, "photoMenu", false);
+    key(GDK_KEY_F10, Gx::Shift, "photoMenu", false);
     key(GDK_KEY_d, Gx::CtrlShift, "duplicates");
     key(GDK_KEY_i, Gx::Ctrl, "exif");
     key(GDK_KEY_m, Gx::Ctrl, "maximize");

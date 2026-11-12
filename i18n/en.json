@@ -447,5 +447,6 @@
   "Kopiuj wyświetlone zdjęcie do schowka (obraz i plik)": "Copy the displayed photo to the clipboard (image and file)",
   "Eksportuj kopię pliku — wybierz miejsce i nazwę…": "Export a copy of the file — choose a place and name…",
   "Prawy przycisk na zdjęciu": "Right-click on the photo",
-  "Menu: kopiuj, eksportuj, ulubione, EXIF": "Menu: copy, export, favorites, EXIF"
+  "Menu: kopiuj, eksportuj, ulubione, EXIF": "Menu: copy, export, favorites, EXIF",
+  "Prawy przycisk na zdjęciu / Menu / Shift+F10": "Right-click on the photo / Menu / Shift+F10"
 }
