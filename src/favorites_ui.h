@@ -42,6 +42,6 @@ class FavoritesDialog final: public UiDialog {
  void openSelected();
 public:
  explicit FavoritesDialog(Favorites*,QWidget*parent=nullptr);
-signals:
+Q_SIGNALS:
  void openRequested(const QString&);
 };

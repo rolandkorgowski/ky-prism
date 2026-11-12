@@ -33,10 +33,17 @@ int main(int argc, char **argv) {
               .new_from_image({220, 80, 30})
               .copy(vips::VImage::option()->set("interpretation",
                                                 VIPS_INTERPRETATION_sRGB));
-      image
-          .icc_transform("srgb", vips::VImage::option()
-                                     ->set("input_profile", "srgb")
-                                     ->set("depth", 16))
+      // 16-bit fixture; with lcms2 it also carries an embedded sRGB profile.
+      auto sixteen =
+          vips_icc_present()
+              ? image.icc_transform("srgb", vips::VImage::option()
+                                                ->set("input_profile", "srgb")
+                                                ->set("depth", 16))
+              : (image.cast(VIPS_FORMAT_USHORT) * 257.0)
+                    .cast(VIPS_FORMAT_USHORT)
+                    .copy(vips::VImage::option()->set(
+                        "interpretation", VIPS_INTERPRETATION_RGB16));
+      sixteen
           .tiffsave(name.toUtf8().constData(),
                     vips::VImage::option()->set("bigtiff", wide));
       QFile f(name);
@@ -84,8 +91,9 @@ int main(int argc, char **argv) {
       }
       Document doc;
       auto info = doc.open(name, {}, token);
+      // Without lcms2 the fixture has no profile to preserve.
       check(info.size == QSize(80, 40) &&
-                info.text.contains("profil osadzony") &&
+                (!vips_icc_present() || info.text.contains("profil osadzony")) &&
                 info.text.contains("warstw Photoshop"),
             "TIFF/renamed FFF metadata preservation");
       auto p = doc.tile(0, 0, 0).image.pixelColor(0, 0);

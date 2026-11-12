@@ -33,12 +33,12 @@ public:
     timeout.setInterval(20000);
     connect(&timeout, &QTimer::timeout, this, [this] {
       process.kill();
-      emit failed("Nośnik nie odpowiedział w ciągu 20 sekund.");
+      Q_EMIT failed("Nośnik nie odpowiedział w ciągu 20 sekund.");
     });
     connect(&process, &QProcess::errorOccurred, this,
             [this](QProcess::ProcessError) {
               timeout.stop();
-              emit failed("Nie można uruchomić obsługi USB: " +
+              Q_EMIT failed("Nie można uruchomić obsługi USB: " +
                           process.errorString());
             });
     connect(
@@ -46,7 +46,7 @@ public:
         this, [this](int code, QProcess::ExitStatus) {
           timeout.stop();
           if (code) {
-            emit failed(
+            Q_EMIT failed(
                 "USB: " +
                 QString::fromUtf8(process.readAllStandardError()).left(500));
             return;
@@ -54,10 +54,10 @@ public:
           if (mounting) {
             for (const auto &v : QStorageInfo::mountedVolumes())
               if (v.isReady() && QString::fromLocal8Bit(v.device()) == device) {
-                emit opened(v.rootPath());
+                Q_EMIT opened(v.rootPath());
                 return;
               }
-            emit failed("Nośnik zamontowano, ale nie potwierdzono jego "
+            Q_EMIT failed("Nośnik zamontowano, ale nie potwierdzono jego "
                         "ścieżki. Spróbuj ponownie.");
             return;
           }
@@ -85,12 +85,12 @@ public:
           }
           const auto row = rows.at(selected);
           if (!row.mount.isEmpty()) {
-            emit opened(row.mount);
+            Q_EMIT opened(row.mount);
             return;
           }
           auto command = QStandardPaths::findExecutable("udisksctl");
           if (command.isEmpty()) {
-            emit failed("Brak udisksctl. Zamontuj nośnik w programie Pliki lub "
+            Q_EMIT failed("Brak udisksctl. Zamontuj nośnik w programie Pliki lub "
                         "zainstaluj udisks2.");
             return;
           }
@@ -114,7 +114,7 @@ public:
                             "NAME,TYPE,TRAN,RM,FSTYPE,MOUNTPOINTS,LABEL"});
     timeout.start();
   }
-signals:
+Q_SIGNALS:
   void opened(const QString &path);
   void failed(const QString &message);
 };

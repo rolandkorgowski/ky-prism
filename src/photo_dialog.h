@@ -32,7 +32,7 @@ public:
   void resetRequests();
   bool busy() const { return !running.isEmpty() || !queue.isEmpty(); }
   int cachedKiB() const { return images.totalCost(); }
-signals:
+Q_SIGNALS:
   void changed();
 };
 

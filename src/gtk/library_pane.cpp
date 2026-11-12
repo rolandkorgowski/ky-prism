@@ -315,13 +315,13 @@ struct LibraryPane::Impl : QObject {
                    th = gdk_texture_get_height(cell->texture);
       const double scale = std::min(w / tw, h / th);
       const double dw = tw * scale, dh = th * scale;
-      graphene_rect_t bounds = GRAPHENE_RECT_INIT(
+      graphene_rect_t bounds = Gx::rect(
           float((w - dw) / 2), float((h - dh) / 2), float(dw), float(dh));
       gtk_snapshot_append_scaled_texture(
           snapshot, cell->texture, GSK_SCALING_FILTER_TRILINEAR, &bounds);
       return;
     }
-    graphene_rect_t all = GRAPHENE_RECT_INIT(0, 0, float(w), float(h));
+    graphene_rect_t all = Gx::rect(0, 0, float(w), float(h));
     cairo_t *cr = gtk_snapshot_append_cairo(snapshot, &all);
     GdkRGBA ink{1, 1, 1, 1};
     gtk_widget_get_color(cell->canvas, &ink);
@@ -537,7 +537,7 @@ struct LibraryPane::Impl : QObject {
           if (!native)
             return FALSE;
           gtk_native_get_surface_transform(native, &nx, &ny);
-          graphene_point_t in = GRAPHENE_POINT_INIT(float(sx - nx),
+          graphene_point_t in = Gx::point(float(sx - nx),
                                                     float(sy - ny));
           graphene_point_t out;
           if (!gtk_widget_compute_point(GTK_WIDGET(native), view, &in, &out) ||

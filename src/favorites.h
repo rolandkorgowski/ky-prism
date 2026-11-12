@@ -50,7 +50,7 @@ public:
  void cancel(){token->store(true);}
  void shutdown();
  void stopWork();
-signals:
+Q_SIGNALS:
  void changed();
  void working(bool);
  void progress(qint64,qint64);

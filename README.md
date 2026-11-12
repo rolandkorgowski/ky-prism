@@ -1,19 +1,19 @@
 # ky-prism
 
-Fast GPU photo viewer for Linux with a GTK 4 interface. Shows every photo
+Fast GPU photo viewer for Linux and BSD with a GTK 4 interface. Shows every photo
 exactly as it is: colour-managed, pixel-exact at 1:1, never filtered.
 
 ![ky-prism main window](docs/screenshots/main-window.png)
 
 ## Installation
 
-You need a desktop Linux with **GTK ≥ 4.12** and **Qt ≥ 6.4**. That covers
-Ubuntu 24.04 or newer, Debian 13, Fedora 40 or newer, and Arch Linux and its
-derivatives (Omarchy, Manjaro, EndeavourOS).
+You need a desktop system with **GTK ≥ 4.12** and **Qt ≥ 6.4**. That covers
+Ubuntu 24.04 or newer, Debian 13, Fedora 40 or newer, Arch Linux and its
+derivatives (Omarchy, Manjaro, EndeavourOS), FreeBSD 14/15 and OpenBSD 7.6+.
 
 The installer works under your own account, in `~/.local`. It asks for your
-password (`sudo`) only to install missing build packages from your
-distribution's official repositories. Then it compiles the program, runs the
+password (`sudo`, or `doas` on OpenBSD) only to install missing build
+packages from your system's official repositories. Then it compiles the program, runs the
 tests and adds **ky-prism** to the application menu.
 
 ### Ubuntu, Debian, Linux Mint, Pop!_OS
@@ -55,6 +55,53 @@ cd ky-prism
 On Omarchy the installer also adds the ky-prism buttons to the top bar and
 a Hyprland window rule.
 
+### FreeBSD
+
+As root, once: install Python and sudo, then allow the `wheel` group in
+sudo (uncomment `%wheel ALL=(ALL:ALL) ALL` with `visudo`). Your account must
+be in `wheel`.
+
+```sh
+pkg install -y git python3 sudo
+```
+
+Then as your user:
+
+```sh
+git clone https://github.com/rolandkorgowski/ky-prism.git
+cd ky-prism
+./run.sh install
+```
+
+### OpenBSD
+
+As root, once:
+
+```sh
+pkg_add git python%3
+```
+
+```sh
+echo 'permit persist :wheel' > /etc/doas.conf
+```
+
+Then as your user (in the `wheel` group):
+
+```sh
+git clone https://github.com/rolandkorgowski/ky-prism.git
+cd ky-prism
+./run.sh install
+```
+
+On FreeBSD and OpenBSD, if the `ky-prism` command is not found in a
+terminal, add `export PATH="$HOME/.local/bin:$PATH"` to `~/.profile`. The
+application menu works without it. The USB-drive button needs `udisksctl`
+and is Linux-only; on BSD mount the drive yourself and open its folder.
+OpenBSD's libvips package has no ICC (lcms2) and no libexif support. Photos
+with an embedded colour profile are therefore shown as sRGB, the EXIF panel
+lists fewer fields, and CMYK files cannot be opened. Orientation still works,
+because ky-prism reads it from EXIF itself.
+
 ### Starting the program
 
 Open **ky-prism** from the application menu, or run it from a terminal:
@@ -78,6 +125,28 @@ cd ky-prism && git pull && ./run.sh install
 
 The previous version is backed up before every installation, in
 `~/.local/state/omarchy-prism/install-backups/`.
+
+## Backup and moving to another computer
+
+```sh
+./run.sh backup               # asks: settings only, or the whole program
+./run.sh restore FILE         # settings back from a backup or an export
+./run.sh export               # asks: another computer/system, or another account
+```
+
+- **`backup --ustawienia`** saves favourites, folder bookmarks, language and
+  interface opacity to `backups/`. **`backup --program`** adds the sources,
+  the git history and the built program. Backups never contain photos and
+  never overwrite each other.
+- **`export --system`** makes a package in `dist/` for another computer or
+  operating system. It contains the sources, the git history and your
+  settings, and the program is compiled there. **`export --konto`** also
+  includes the ready program, for another account on the same system.
+
+On the target, unpack the package and run `./run.sh`. It shows what it will
+do, asks, then restores the settings and installs ky-prism. Every package
+contains `INSTALACJA.txt`. Full guide in Polish:
+[docs/INSTALACJA.md](docs/INSTALACJA.md).
 
 ### Optional: NVIDIA nvJPEG
 

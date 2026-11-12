@@ -455,6 +455,8 @@ inline const QHash<QString,QString> &prismEnglishCatalog() {
     {QString::fromUtf8("Prawy przycisk na zdjęciu"),QString::fromUtf8("Right-click on the photo")},
     {QString::fromUtf8("Menu: kopiuj, eksportuj, ulubione, EXIF"),QString::fromUtf8("Menu: copy, export, favorites, EXIF")},
     {QString::fromUtf8("Prawy przycisk na zdjęciu / Menu / Shift+F10"),QString::fromUtf8("Right-click on the photo / Menu / Shift+F10")},
+    {QString::fromUtf8("CMYK wymaga zarządzania kolorem ICC, którego libvips na tym systemie nie ma (bez lcms2)."),QString::fromUtf8("CMYK needs ICC colour management, which libvips on this system lacks (no lcms2).")},
+    {QString::fromUtf8("ICC: libvips na tym systemie nie obsługuje profili (bez lcms2) — profil osadzony pominięto, przyjęto sRGB.\n"),QString::fromUtf8("ICC: libvips on this system has no profile support (no lcms2) — the embedded profile was skipped, sRGB assumed.\n")},
   };
   return data;
 }

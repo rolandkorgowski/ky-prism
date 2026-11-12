@@ -22,10 +22,12 @@
 #include <cstring>
 #include <fcntl.h>
 #include <limits>
+#ifdef __linux__
 #include <linux/fs.h>
+#include <sys/syscall.h>
+#endif
 #include <stdexcept>
 #include <sys/stat.h>
-#include <sys/syscall.h>
 #include <unistd.h>
 class DuplicateModel final : public QAbstractItemModel {
   QList<DuplicateGroup> rows;

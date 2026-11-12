@@ -1,12 +1,13 @@
-#!/usr/bin/env bash
-set -Eeuo pipefail
+#!/bin/sh
+# POSIX sh: also runs on FreeBSD/OpenBSD, where bash is not installed by default.
+set -eu
 export OMP_NUM_THREADS=4
 # Process-local PRIME settings. The shared RTX routing script is never edited.
 # GTK 4 draws through EGL: natively on Wayland, or on X11/XWayland.
 mode=${PRISM_GPU:-auto}
-case $mode in
+case "$mode" in
  auto)
-  if [[ -d /proc/driver/nvidia/gpus ]]; then
+  if [ -d /proc/driver/nvidia/gpus ]; then
    export __NV_PRIME_RENDER_OFFLOAD=1
    export __GLX_VENDOR_LIBRARY_NAME=nvidia
   fi ;;
@@ -18,11 +19,11 @@ case $mode in
 esac
 # PRISM_BACKEND=x11 keeps the earlier XWayland route (needs DISPLAY);
 # the default lets GTK choose, which is native Wayland in a Wayland session.
-case ${PRISM_BACKEND:-auto} in
+case "${PRISM_BACKEND:-auto}" in
  auto) ;;
  wayland) export GDK_BACKEND=wayland ;;
  x11)
-  [[ -n ${DISPLAY:-} ]] || { printf '%s\n' 'PRISM_BACKEND=x11 wymaga X11/XWayland (DISPLAY).' >&2; exit 1; }
+  [ -n "${DISPLAY:-}" ] || { printf '%s\n' 'PRISM_BACKEND=x11 wymaga X11/XWayland (DISPLAY).' >&2; exit 1; }
   export GDK_BACKEND=x11 ;;
  *) printf '%s\n' 'PRISM_BACKEND: auto, wayland albo x11.' >&2; exit 1 ;;
 esac

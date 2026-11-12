@@ -54,6 +54,18 @@ inline guint later(Callback run, guint milliseconds = 0) {
                       : g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, invoke, boxed,
                                         destroy);
 }
+// Graphene values without C99 compound literals (GRAPHENE_*_INIT), which
+// clang reports under -Wpedantic in C++.
+inline graphene_rect_t rect(float x, float y, float width, float height) {
+  graphene_rect_t value;
+  graphene_rect_init(&value, x, y, width, height);
+  return value;
+}
+inline graphene_point_t point(float x, float y) {
+  graphene_point_t value;
+  graphene_point_init(&value, x, y);
+  return value;
+}
 inline void addClass(GtkWidget *widget, const char *name) {
   gtk_widget_add_css_class(widget, name);
 }

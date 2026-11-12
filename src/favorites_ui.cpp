@@ -123,7 +123,7 @@ void FavoritesDialog::openSelected() {
         "Pliku nie ma w zapisanym miejscu. Użyj „Odnajdź zdjęcie”.");
     return;
   }
-  emit openRequested(e.path);
+  Q_EMIT openRequested(e.path);
   hide();
 }
 FavoritesDialog::FavoritesDialog(Favorites *controller, QWidget *parent)

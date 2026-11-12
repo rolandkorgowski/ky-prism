@@ -493,7 +493,7 @@ struct PhotoView::Impl : QObject {
   // CPU path: only when no OpenGL 3.3 context exists (remote/virtual hosts).
   void paintCpu(GtkSnapshot *snapshot, int w, int h) {
     const GdkRGBA backdrop{0.075f, 0.075f, 0.075f, 1.0f};
-    graphene_rect_t all = GRAPHENE_RECT_INIT(0, 0, float(w), float(h));
+    graphene_rect_t all = Gx::rect(0, 0, float(w), float(h));
     gtk_snapshot_append_color(snapshot, &backdrop, &all);
     if (valid() || cpuPreview.isNull() || dimensions.isEmpty())
       return;
@@ -508,7 +508,7 @@ struct PhotoView::Impl : QObject {
       g_bytes_unref(bytes);
     }
     const QRectF r(offset, QSizeF(dimensions) * zoom);
-    graphene_rect_t bounds = GRAPHENE_RECT_INIT(
+    graphene_rect_t bounds = Gx::rect(
         float(r.x()), float(r.y()), float(r.width()), float(r.height()));
     gtk_snapshot_push_clip(snapshot, &all);
     gtk_snapshot_append_scaled_texture(snapshot, cpuTexture,

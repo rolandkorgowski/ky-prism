@@ -477,7 +477,7 @@ void choosePhoto(GtkWindow *parent, const QString &title,
                  th = gdk_texture_get_height(c->texture);
     const double scale = std::min(w / tw, h / th);
     graphene_rect_t bounds =
-        GRAPHENE_RECT_INIT(float((w - tw * scale) / 2), float((h - th * scale) / 2),
+        Gx::rect(float((w - tw * scale) / 2), float((h - th * scale) / 2),
                            float(tw * scale), float(th * scale));
     gtk_snapshot_append_scaled_texture(snapshot, c->texture,
                                        GSK_SCALING_FILTER_TRILINEAR, &bounds);

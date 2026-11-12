@@ -26,7 +26,7 @@ public:
   explicit BookmarksDialog(std::function<QString()> currentDirectory,
                            QWidget *parent = nullptr);
   void refresh();
-signals:
+Q_SIGNALS:
   void openRequested(const QString &);
   void changed();
 

@@ -4,12 +4,15 @@ import configparser
 import datetime, hashlib, json, os, shutil, subprocess, sys, tarfile, tempfile
 from pathlib import Path
 ROOT = Path(__file__).resolve().parent
-SOURCES = ['CMakeLists.txt', 'dependencies.py', 'run.sh', 'package.py', 'ky-prism', 'ky-prism.desktop', 'COPYRIGHT.md', 'KEYBOARD.md', 'omarchy-prism', 'omarchy-prism.desktop', 'omarchy-prism.svg', 'README.md', 'LICENSE', 'prism.lua', 'src', 'tests', 'plugin', 'terminal-plugin', 'chrome-plugin', 'omarchy-prism-chrome', 'omarchy-prism-terminal', 'omarchy-prism-open', 'publication/prepare.py', 'publication/README.md', 'publication/templates', 'publication/tests', 'i18n', 'diagnose-hang.py', 'transfer.py', 'updates', 'docs']
+SOURCES = ['CMakeLists.txt', 'dependencies.py', 'run.sh', 'package.py', 'prismctl.py', 'ky-prism', 'ky-prism.desktop', 'COPYRIGHT.md', 'KEYBOARD.md', 'omarchy-prism', 'omarchy-prism.desktop', 'omarchy-prism.svg', 'README.md', 'LICENSE', 'prism.lua', 'src', 'tests', 'plugin', 'terminal-plugin', 'chrome-plugin', 'omarchy-prism-chrome', 'omarchy-prism-terminal', 'omarchy-prism-open', 'publication/prepare.py', 'publication/README.md', 'publication/templates', 'publication/tests', 'i18n', 'diagnose-hang.py', 'transfer.py', 'updates', 'docs']
 def digest(path):
     h = hashlib.sha256()
     with path.open('rb') as f:
         for block in iter(lambda: f.read(1024*1024), b''): h.update(block)
     return h.hexdigest()
+# `install --prebuilt` installs the program shipped in prebuilt/ (export for
+# another account of the same system) instead of build/.
+BINARY = ROOT/'build/ky-prism'
 def nvjpeg_artifact():
     metadata=ROOT/'build/nvjpeg-build.json'
     if metadata.is_file():
@@ -24,10 +27,22 @@ def nvjpeg_metadata():
         path=ROOT/name
         if path.is_file(): return path
     return None
+def source_files(root=None):
+    """Every distributed source file (SOURCES expanded), relative names."""
+    root=root or ROOT
+    for name in SOURCES:
+        p=root/name
+        for f in sorted(p.rglob('*')) if p.is_dir() else [p]:
+            if f.is_file() and '__pycache__' not in f.parts: yield str(f.relative_to(root))
+def write_manifest(root=None):
+    root=root or ROOT
+    manifest={name:digest(root/name) for name in source_files(root)}
+    (root/'MANIFEST.json').write_text(json.dumps(manifest,indent=2)+'\n')
+    return len(manifest)
 def mappings(home):
     share = home / '.local/share/omarchy-prism'
-    result = [(ROOT/'build/ky-prism',share/'bin/ky-prism'),
-              (ROOT/'build/ky-prism',share/'bin/omarchy-prism'),
+    result = [(BINARY,share/'bin/ky-prism'),
+              (BINARY,share/'bin/omarchy-prism'),
               (ROOT/'ky-prism',home/'.local/bin/ky-prism'),
               (ROOT/'omarchy-prism',home/'.local/bin/omarchy-prism'),
               (ROOT/'ky-prism.desktop',home/'.local/share/applications/ky-prism.desktop'),
@@ -96,7 +111,9 @@ def configuration_errors(output):
 
 def main():
     action=sys.argv[1]; home=Path.home()
-    if action=='check-source':
+    if action=='manifest':
+        print('MANIFEST.json:',write_manifest(),'plików')
+    elif action=='check-source':
         manifest=ROOT/'MANIFEST.json'
         if not manifest.is_file(): raise ValueError('Brak MANIFEST.json źródeł')
         for name,expected in json.loads(manifest.read_text()).items():
@@ -105,8 +122,10 @@ def main():
             if digest(p)!=expected: raise ValueError('Niezgodne źródła: '+name)
         print('Manifest źródeł poprawny.')
     elif action=='install':
+        global BINARY
+        if '--prebuilt' in sys.argv[2:]: BINARY=ROOT/'prebuilt/ky-prism'
+        if not BINARY.is_file(): raise ValueError('Najpierw ./run.sh build')
         files=mappings(home)
-        if not (ROOT/'build/ky-prism').is_file(): raise ValueError('Najpierw ./run.sh build')
         stamp=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
         backup=home/'.local/state/omarchy-prism/install-backups'/stamp
         # Preflight every path, reject symlinks rather than following another installation.
@@ -242,63 +261,16 @@ def main():
                 print('Nie potwierdzono odświeżenia paska. W sesji pulpitu wykonaj: omarchy restart shell',file=sys.stderr)
         print('Zainstalowano ky-prism. Kopia poprzednich plików:',backup)
         print('Uruchom: ky-prism /ścieżka/zdjęcie.jpg — sprawdź nazwę renderera w stopce.')
+        local_bin=str(home/'.local/bin')
+        if local_bin not in os.environ.get('PATH','').split(os.pathsep):
+            print('Polecenia ky-prism nie ma jeszcze w PATH. Dopisz do ~/.profile i zaloguj się ponownie:')
+            print('  export PATH="$HOME/.local/bin:$PATH"')
+            print('Menu aplikacji działa bez tego (pełna ścieżka w pliku .desktop).')
     elif action=='verify':
         record=json.loads((home/'.local/share/omarchy-prism/installed.json').read_text())
         for name,expected in record.items():
             if digest(home/name)!=expected: raise ValueError('Niezgodność: '+name)
         print('Pliki instalacji zgodne z rejestrem.')
-    elif action in ('export','backup'):
-        if len(sys.argv)!=3: raise ValueError('Podaj katalog docelowy.')
-        dest=Path(sys.argv[2]).resolve();dest.mkdir(parents=True,exist_ok=True)
-        stamp=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
-        archive=dest/f'ky-prism-{action}-{stamp}.tar.gz'
-        with tempfile.TemporaryDirectory(prefix='prism-package-') as tmp:
-            stage=Path(tmp)/'ky-prism';stage.mkdir()
-            for name in SOURCES:
-                src=ROOT/name
-                if src.is_dir():shutil.copytree(src,stage/name,ignore=shutil.ignore_patterns('__pycache__'))
-                else:
-                    (stage/name).parent.mkdir(parents=True,exist_ok=True)
-                    shutil.copy2(src,stage/name)
-            favorites=home/'.local/share/omarchy-prism/favorites.json'
-            if favorites.is_file():
-                if favorites.is_symlink() or favorites.stat().st_size>8*1024*1024:raise ValueError('Nieprawidłowa kopia ulubionych')
-                (stage/'user-data').mkdir(exist_ok=True);shutil.copy2(favorites,stage/'user-data/favorites.json')
-            bookmarks=home/'.local/share/omarchy-prism/bookmarks.json'
-            if bookmarks.is_file():
-                if bookmarks.is_symlink() or bookmarks.stat().st_size>128*1024:raise ValueError('Nieprawidłowa kopia zakładek')
-                (stage/'user-data').mkdir(exist_ok=True);shutil.copy2(bookmarks,stage/'user-data/bookmarks.json')
-            language=home/'.local/share/omarchy-prism/language.json'
-            if language.is_file():
-                if language.is_symlink() or language.stat().st_size>4096:raise ValueError('Nieprawidłowa kopia języka')
-                preference=json.loads(language.read_text())
-                if preference.get('version')!=1 or preference.get('language') not in ('pl','en'):raise ValueError('Nieprawidłowy język')
-                (stage/'user-data').mkdir(exist_ok=True)
-                (stage/'user-data/language.json').write_text(json.dumps({'version':1,'language':preference['language']})+'\n')
-            appearance=home/'.config/ky-prism/appearance.json'
-            if appearance.exists() or appearance.is_symlink():
-                if appearance.is_symlink() or appearance.stat().st_size>4096: raise ValueError('Nieprawidłowe ustawienia wyglądu')
-                preference=json.loads(appearance.read_text())
-                percent=preference.get('ui_opacity_percent') if isinstance(preference,dict) else None
-                if type(percent) is not int or not 0<=percent<=100: raise ValueError('Nieprawidłowe krycie interfejsu')
-                (stage/'user-data').mkdir(exist_ok=True)
-                (stage/'user-data/appearance.json').write_text(json.dumps({'ui_opacity_percent':percent})+'\n')
-            if (ROOT/'build/ky-prism').is_file():
-                (stage/'prebuilt').mkdir();shutil.copy2(ROOT/'build/ky-prism',stage/'prebuilt/ky-prism')
-                module=nvjpeg_artifact()
-                if module: shutil.copy2(module,stage/'prebuilt/libprism_nvjpeg.so')
-                metadata=nvjpeg_metadata()
-                if metadata: shutil.copy2(metadata,stage/'prebuilt/nvjpeg-build.json')
-            if action=='backup' and (home/'.local/share/omarchy-prism/installed.json').exists():
-                record=json.loads((home/'.local/share/omarchy-prism/installed.json').read_text())
-                for name in record:
-                    out=stage/'installed'/name;out.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(home/name,out)
-            manifest={str(p.relative_to(stage)):digest(p) for p in stage.rglob('*') if p.is_file()}
-            (stage/'MANIFEST.json').write_text(json.dumps(manifest,indent=2)+'\n')
-            with tarfile.open(archive,'x:gz') as tar:tar.add(stage,arcname='ky-prism')
-        os.chmod(archive,0o600)
-        archive.with_suffix(archive.suffix+'.sha256').write_text(digest(archive)+'  '+archive.name+'\n')
-        print(archive);print('Źródła + binarka dla bieżącego systemu; paczki offline zapewnia pełny eksport Omarchy. Dla Ubuntu: ./run.sh photos '+action+' KATALOG --target ubuntu (z katalogu remote-desktop).')
     else:raise ValueError('Nieznana operacja')
 if __name__=='__main__':
     try: main()

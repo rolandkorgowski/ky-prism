@@ -68,6 +68,6 @@ public:
   quint64 cameraPreviews() const { return previews; }
   bool busy() const { return !running.isEmpty() || !queue.isEmpty(); }
 
-signals:
+Q_SIGNALS:
   void changed();
 };

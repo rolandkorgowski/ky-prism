@@ -448,5 +448,7 @@
   "Eksportuj kopię pliku — wybierz miejsce i nazwę…": "Export a copy of the file — choose a place and name…",
   "Prawy przycisk na zdjęciu": "Right-click on the photo",
   "Menu: kopiuj, eksportuj, ulubione, EXIF": "Menu: copy, export, favorites, EXIF",
-  "Prawy przycisk na zdjęciu / Menu / Shift+F10": "Right-click on the photo / Menu / Shift+F10"
+  "Prawy przycisk na zdjęciu / Menu / Shift+F10": "Right-click on the photo / Menu / Shift+F10",
+  "CMYK wymaga zarządzania kolorem ICC, którego libvips na tym systemie nie ma (bez lcms2).": "CMYK needs ICC colour management, which libvips on this system lacks (no lcms2).",
+  "ICC: libvips na tym systemie nie obsługuje profili (bez lcms2) — profil osadzony pominięto, przyjęto sRGB.\n": "ICC: libvips on this system has no profile support (no lcms2) — the embedded profile was skipped, sRGB assumed.\n"
 }

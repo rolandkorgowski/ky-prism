@@ -95,7 +95,7 @@ View::View(QWidget *parent) : QWidget(parent) {
           [this](const QVariant &value) {
             zoom = std::exp(value.toDouble());
             offset = zoomAnchor - zoomPoint * zoom;
-            emit zoomChanged(zoom * devicePixelRatioF());
+            Q_EMIT zoomChanged(zoom * devicePixelRatioF());
             update();
           });
   connect(&zoomAnimation, &QVariantAnimation::finished, this, [this] {
@@ -136,7 +136,7 @@ void View::initializeGL() {
   if (!initializeOpenGLFunctions()) {
     failed = true;
     stop();
-    emit status("Wymagany OpenGL 3.3.");
+    Q_EMIT status("Wymagany OpenGL 3.3.");
     return;
   }
   connect(
@@ -152,7 +152,7 @@ void View::initializeGL() {
         " • " +
         QString::fromLatin1(
             reinterpret_cast<const char *>(glGetString(GL_RENDERER)));
-  emit gpuReady(gpu);
+  Q_EMIT gpuReady(gpu);
   bool ok = program.addShaderFromSourceCode(QOpenGLShader::Vertex,
                                             PrismShaders::vertex) &&
             program.addShaderFromSourceCode(QOpenGLShader::Fragment,
@@ -161,7 +161,7 @@ void View::initializeGL() {
   if (!ok) {
     failed = true;
     stop();
-    emit status("Błąd shadera: " + program.log());
+    Q_EMIT status("Błąd shadera: " + program.log());
     return;
   }
   immutableTextures = context()->format().version() >= qMakePair(4, 2) ||
@@ -268,7 +268,7 @@ void View::upload(const Tile &t) {
     glDeleteTextures(1, &tex.id);
     failed = true;
     stop();
-    emit status("Błąd pamięci GPU/OpenGL: " + QString::number(error));
+    Q_EMIT status("Błąd pamięci GPU/OpenGL: " + QString::number(error));
   } else {
     textures.emplace(t.key(), tex);
     gpuBytes += cost;
@@ -373,8 +373,8 @@ void View::release() {
 }
 void View::open(const QString &path, const QString &displayProfile) {
   if (failed) {
-    emit loadingChanged(false);
-    emit status("GPU nie jest gotowe. Sprawdź obsługę OpenGL 3.3 i uruchom "
+    Q_EMIT loadingChanged(false);
+    Q_EMIT status("GPU nie jest gotowe. Sprawdź obsługę OpenGL 3.3 i uruchom "
                 "program ponownie.");
     return;
   }
@@ -387,7 +387,7 @@ void View::open(const QString &path, const QString &displayProfile) {
   profile = displayProfile;
   ++generation;
   pendingOpen = true;
-  emit loadingChanged(true);
+  Q_EMIT loadingChanged(true);
   dimensions = {};
   if (isValid()) {
     makeCurrent();
@@ -399,7 +399,7 @@ void View::open(const QString &path, const QString &displayProfile) {
     gpuBytes = 0;
     doneCurrent();
   }
-  emit status("Odczyt i profilowanie kolorów…");
+  Q_EMIT status("Odczyt i profilowanie kolorów…");
   update();
   schedule();
 }
@@ -436,7 +436,7 @@ void View::schedule() {
                         else
                           pendingPreview = preview.preview;
                         loader->setLoading(false);
-                        emit status(preview.text);
+                        Q_EMIT status(preview.text);
                         fit();
                       },
                       Qt::QueuedConnection);
@@ -452,7 +452,7 @@ void View::schedule() {
   }
   if (!isValid()) {
     if (!canvas && !dimensions.isEmpty())
-      emit status("Gotowe • podgląd CPU (offscreen), bez testu GPU");
+      Q_EMIT status("Gotowe • podgląd CPU (offscreen), bez testu GPU");
     return;
   }
   for (const auto &t : visibleTiles())
@@ -473,7 +473,7 @@ void View::schedule() {
       }));
       return;
     }
-  emit status(QString("Gotowe • RAM cache ≤256 MiB • GPU kafelki %1 MiB")
+  Q_EMIT status(QString("Gotowe • RAM cache ≤256 MiB • GPU kafelki %1 MiB")
                   .arg(gpuBytes / 1048576));
 }
 void View::finishWork() {
@@ -486,20 +486,20 @@ void View::finishWork() {
     return;
   }
   if (!r.error.isEmpty()) {
-    emit loadingChanged(false);
-    emit status(r.error);
-    emit metadata(r.error);
+    Q_EMIT loadingChanged(false);
+    Q_EMIT status(r.error);
+    Q_EMIT metadata(r.error);
     return;
   }
   if (r.loaded) {
-    emit loadingChanged(false);
+    Q_EMIT loadingChanged(false);
     bool first = dimensions.isEmpty();
     dimensions = r.info.size;
     if (isValid())
       upload({-1, 0, 0, r.info.preview});
     else
       pendingPreview = r.info.preview;
-    emit metadata(r.info.text);
+    Q_EMIT metadata(r.info.text);
     if (first)
       fit();
   } else
@@ -522,7 +522,7 @@ void View::fit() {
   offset = {(width() - dimensions.width() * zoom) / 2,
             (height() - dimensions.height() * zoom) / 2};
   offset = nativeAligned(offset, zoom, devicePixelRatioF());
-  emit zoomChanged(zoom * devicePixelRatioF());
+  Q_EMIT zoomChanged(zoom * devicePixelRatioF());
   request();
 }
 void View::actual() {
@@ -535,8 +535,8 @@ void View::actual() {
   offset = {(width() - dimensions.width() * zoom) / 2,
             (height() - dimensions.height() * zoom) / 2};
   offset = nativeAligned(offset, zoom, devicePixelRatioF());
-  emit zoomChanged(1.0);
-  emit status("1:1 • jeden piksel zdjęcia na fizyczny piksel ekranu");
+  Q_EMIT zoomChanged(1.0);
+  Q_EMIT status("1:1 • jeden piksel zdjęcia na fizyczny piksel ekranu");
   request();
 }
 void View::scale(double factor, QPointF anchor) {

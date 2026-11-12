@@ -927,7 +927,7 @@ struct PrismWindow::Impl : QObject {
     Ui::text(Ui::buttonLabel(menuHeart), heartIsSelected ? "Usuń z ulubionych"
                                                          : "Dodaj do ulubionych");
     graphene_point_t point;
-    const graphene_point_t local = GRAPHENE_POINT_INIT(float(x), float(y));
+    const graphene_point_t local = Gx::point(float(x), float(y));
     if (!gtk_widget_compute_point(target->widget(), root, &local, &point))
       return;
     const GdkRectangle at{int(point.x), int(point.y), 1, 1};

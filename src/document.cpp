@@ -1,4 +1,5 @@
 #include "document.h"
+#include "exif_orientation.h"
 #include "raster_source.h"
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -77,8 +78,11 @@ static VImage displayImage(VImage source, const QString &profile,
     fail("Obrazy HDR/zmiennoprzecinkowe wymagają osobnego toru HDR; nie są "
          "konwertowane po cichu.");
   const bool embedded = source.get_typeof(VIPS_META_ICC_NAME) != 0;
+  // libvips without lcms2 (e.g. the OpenBSD package) has no icc_transform:
+  // photos are then shown as sRGB and the panel says so.
+  const bool icc = vips_icc_present();
   QString target = profile.isEmpty() ? "srgb" : profile;
-  if (embedded) {
+  if (embedded && icc) {
     source = source.icc_transform(target.toUtf8().constData(),
                                   VImage::option()
                                       ->set("embedded", true)
@@ -88,7 +92,9 @@ static VImage displayImage(VImage source, const QString &profile,
                  " (relative colorimetric, 16 bit).\n");
   } else {
     if (source.interpretation() == VIPS_INTERPRETATION_CMYK)
-      fail("CMYK bez profilu ICC: nie można zagwarantować poprawnych kolorów.");
+      fail(icc ? "CMYK bez profilu ICC: nie można zagwarantować poprawnych kolorów."
+               : "CMYK wymaga zarządzania kolorem ICC, którego libvips na tym "
+                 "systemie nie ma (bez lcms2).");
     if (source.format() == VIPS_FORMAT_UCHAR) {
       source = (source.colourspace(VIPS_INTERPRETATION_sRGB)
                     .cast(VIPS_FORMAT_USHORT) *
@@ -98,13 +104,16 @@ static VImage displayImage(VImage source, const QString &profile,
                                                VIPS_INTERPRETATION_RGB16));
     } else
       source = source.colourspace(VIPS_INTERPRETATION_RGB16);
-    if (!profile.isEmpty())
+    if (!profile.isEmpty() && icc)
       source = source.icc_transform(profile.toUtf8().constData(),
                                     VImage::option()
                                         ->set("input_profile", "srgb")
                                         ->set("depth", 16)
                                         ->set("intent", VIPS_INTENT_RELATIVE));
-    note.prepend("Brak osadzonego ICC: przyjęto sRGB.\n");
+    note.prepend(embedded ? QString("ICC: libvips na tym systemie nie obsługuje "
+                                    "profili (bez lcms2) — profil osadzony "
+                                    "pominięto, przyjęto sRGB.\n")
+                          : QString("Brak osadzonego ICC: przyjęto sRGB.\n"));
   }
   source = source.cast(VIPS_FORMAT_USHORT);
   if (source.bands() == 3)
@@ -377,6 +386,7 @@ Info Document::open(const QString &path, const QString &profile,
       }
     }
     g_strfreev(fields);
+    source = withExifOrientation(source);
     if (source.get_typeof(VIPS_META_ORIENTATION))
       orientation = source.get_int(VIPS_META_ORIENTATION);
     source = source.autorot();
@@ -451,11 +461,12 @@ Info Document::open(const QString &path, const QString &profile,
            std::max(original.width(), original.height()) / (shrink * 2) >=
                previewEdge)
       shrink *= 2;
-    preview = VImage::jpegload(QFile::encodeName(path).constData(),
-                               VImage::option()
-                                   ->set("shrink", shrink)
-                                   ->set("access", VIPS_ACCESS_SEQUENTIAL)
-                                   ->set("fail_on", VIPS_FAIL_ON_ERROR))
+    preview = withExifOrientation(
+                  VImage::jpegload(QFile::encodeName(path).constData(),
+                                   VImage::option()
+                                       ->set("shrink", shrink)
+                                       ->set("access", VIPS_ACCESS_SEQUENTIAL)
+                                       ->set("fail_on", VIPS_FAIL_ON_ERROR)))
                   .autorot();
     QString ignored;
     preview = displayImage(preview, profile, ignored);

@@ -1,8 +1,10 @@
+#include "exif_orientation.h"
 #include "nvjpeg_backend.h"
 #include "thumbnail_cache.h"
 #include <QColorSpace>
 #include <QCoreApplication>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QTemporaryDir>
 #include <chrono>
 #include <iostream>
@@ -29,6 +31,13 @@ int main(int argc, char **argv) {
                              icc.constData(), icc.size());
     im.set(VIPS_META_ORIENTATION, 6);
     im.jpegsave(path.toUtf8().constData());
+    // libvips without libexif (OpenBSD package) cannot write the orientation
+    // tag: then the fixture is upright and so is its thumbnail.
+    QFile saved(path);
+    check(saved.open(QIODevice::ReadOnly), "fixture readable");
+    const auto bytes = saved.readAll();
+    const int stored = exifOrientation(
+        vips::VImage::new_from_buffer(bytes.constData(), size_t(bytes.size()), ""));
     auto token = std::make_shared<std::atomic_bool>(false);
     qputenv("PRISM_JPEG_BACKEND", "cpu");
     const auto cpu = decodeThumbnail(path, 512, token);
@@ -56,7 +65,8 @@ int main(int argc, char **argv) {
             "invalid module ABI accepted");
     } else {
       const auto decoded = decodeThumbnail(path, 512, token);
-      check(decoded.size() == cpu.size() && decoded.height() == 512,
+      check(decoded.size() == cpu.size() &&
+                (stored < 5 || decoded.height() == 512),
             "EXIF orientation lost");
       const auto a = cpu.pixelColor(30, 30), b = decoded.pixelColor(30, 30);
       check(std::abs(a.red() - b.red()) <= 3 &&

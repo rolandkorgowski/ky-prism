@@ -14,10 +14,12 @@
 #include <cstring>
 #include <fcntl.h>
 #include <limits>
+#ifdef __linux__
 #include <linux/fs.h>
+#include <sys/syscall.h>
+#endif
 #include <stdexcept>
 #include <sys/stat.h>
-#include <sys/syscall.h>
 #include <unistd.h>
 namespace {
 void fail(const QString &s) { throw std::runtime_error(s.toStdString()); }
@@ -124,9 +126,16 @@ void FileOps::copy(const QString &source, const QString &destination,
   // removable media.
   auto temporaryName = QFile::encodeName(temp.fileName()),
        targetName = QFile::encodeName(target.absoluteFilePath());
+#ifdef __linux__
   int published =
       int(::syscall(SYS_renameat2, AT_FDCWD, temporaryName.constData(),
                     AT_FDCWD, targetName.constData(), RENAME_NOREPLACE));
+#else
+  // BSD: link() is the portable no-overwrite publish (fails with EEXIST);
+  // the temporary name is removed afterwards.
+  int published = -1;
+  errno = ENOSYS;
+#endif
   if (!published)
     temp.setAutoRemove(false);
   else if (errno == ENOSYS || errno == EINVAL || errno == EOPNOTSUPP)

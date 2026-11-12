@@ -135,7 +135,7 @@ void BookmarksDialog::change(bool add) {
       return;
     FolderBookmarks::change(path, add);
     refresh();
-    emit changed();
+    Q_EMIT changed();
   } catch (const std::exception &e) {
     message->setText(QString::fromUtf8(e.what()));
   }
@@ -148,7 +148,7 @@ void BookmarksDialog::openSelected() {
     message->setText("Katalog jest niedostępny: " + path);
     return;
   }
-  emit openRequested(path);
+  Q_EMIT openRequested(path);
   hide();
 }
 void BookmarksDialog::showEvent(QShowEvent *event) {

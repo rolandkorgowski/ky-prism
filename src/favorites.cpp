@@ -85,10 +85,10 @@ FavoriteResult FavoriteStore::find(const Favorite&entry,const QString&root,const
 Favorites::Favorites(QObject *parent,QString file):QObject(parent),filename(std::move(file)) {
  pool.setMaxThreadCount(1);pool.setThreadPriority(QThread::LowPriority);
  connect(&watcher,&QFutureWatcher<FavoriteResult>::finished,this,[this]{
-  auto result=watcher.result();active=false;emit working(false);
-  if(!result.error.isEmpty())emit error(result.error);
-  else if(result.search){if(token->load())emit error("Anulowano wyszukiwanie zdjęcia.");else emit found(result.id,result.matches,result.limited);}
-  else {entries=result.entries;emit changed();if(result.added)emit added(result.path);}
+  auto result=watcher.result();active=false;Q_EMIT working(false);
+  if(!result.error.isEmpty())Q_EMIT error(result.error);
+  else if(result.search){if(token->load())Q_EMIT error("Anulowano wyszukiwanie zdjęcia.");else Q_EMIT found(result.id,result.matches,result.limited);}
+  else {entries=result.entries;Q_EMIT changed();if(result.added)Q_EMIT added(result.path);}
   watch();if(reloadPending && !active){reloadPending=false;reload();}
  });
  connect(&changes,&QFileSystemWatcher::directoryChanged,this,[this]{if(active)reloadPending=true;else reload();});watch();
@@ -100,12 +100,12 @@ void Favorites::watch(){QString parent=QFileInfo(filename).absolutePath();if(QDi
 bool Favorites::contains(const QString&path)const {for(const auto&e:entries)if(e.path==absolute(path))return true;return false;}
 void Favorites::start(std::function<FavoriteResult(const std::shared_ptr<std::atomic_bool>&,const Progress&)> job){
  if(stopping)return;
- if(active){emit error("Trwa operacja ulubionych. Możesz ją anulować.");return;}
- active=true;token=std::make_shared<std::atomic_bool>(false);auto t=token;emit working(true);
- watcher.setFuture(QtConcurrent::run(&pool,[this,t,job=std::move(job)]{FavoriteResult r;try{r=job(t,[this,t](qint64 n,qint64 total){QMetaObject::invokeMethod(this,[this,t,n,total]{if(t==token && active && !t->load())emit progress(n,total);},Qt::QueuedConnection);});}catch(const std::exception&e){r.error=QString::fromUtf8(e.what()).left(2048);}return r;}));
+ if(active){Q_EMIT error("Trwa operacja ulubionych. Możesz ją anulować.");return;}
+ active=true;token=std::make_shared<std::atomic_bool>(false);auto t=token;Q_EMIT working(true);
+ watcher.setFuture(QtConcurrent::run(&pool,[this,t,job=std::move(job)]{FavoriteResult r;try{r=job(t,[this,t](qint64 n,qint64 total){QMetaObject::invokeMethod(this,[this,t,n,total]{if(t==token && active && !t->load())Q_EMIT progress(n,total);},Qt::QueuedConnection);});}catch(const std::exception&e){r.error=QString::fromUtf8(e.what()).left(2048);}return r;}));
 }
 void Favorites::reload(){QString f=filename;start([f](const auto&,const auto&){FavoriteResult r;r.entries=FavoriteStore(f).load();return r;});}
 void Favorites::add(const QString&path){QString f=filename;start([f,path](const auto&t,const auto&p){FavoriteResult r;r.entries=FavoriteStore(f).add(path,t,p);r.added=true;r.path=absolute(path);return r;});}
 void Favorites::remove(const QString&id){QString f=filename;start([f,id](const auto&,const auto&){FavoriteResult r;r.entries=FavoriteStore(f).remove(id);return r;});}
-void Favorites::find(const QString&id,const QString&root){for(const auto&e:entries)if(e.id==id){start([e,root](const auto&t,const auto&p){return FavoriteStore::find(e,root,t,p);});return;}emit error("Najpierw wybierz zdjęcie na liście ulubionych.");}
+void Favorites::find(const QString&id,const QString&root){for(const auto&e:entries)if(e.id==id){start([e,root](const auto&t,const auto&p){return FavoriteStore::find(e,root,t,p);});return;}Q_EMIT error("Najpierw wybierz zdjęcie na liście ulubionych.");}
 void Favorites::relocate(const QString&id,const QString&path){QString f=filename;start([f,id,path](const auto&t,const auto&p){FavoriteResult r;r.entries=FavoriteStore(f).relocate(id,path,t,p);return r;});}

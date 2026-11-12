@@ -61,15 +61,18 @@ int main(int argc, char **argv) {
     doc.open(small, {}, token);
     require(doc.tile(0, 0, 0).image.pixelColor(1, 1) == QColor(210, 100, 30),
             "8-to-16-bit exact expansion");
-    auto icc = tmp.path() + "/icc.tif";
-    rgb8.icc_transform("srgb", vips::VImage::option()
-                                   ->set("input_profile", "srgb")
-                                   ->set("depth", 16))
-        .tiffsave(icc.toUtf8().constData());
-    auto iccInfo = doc.open(icc, {}, token);
-    require(iccInfo.text.contains("profil osadzony"), "embedded ICC");
-    require(std::abs(doc.tile(0, 0, 0).image.pixelColor(1, 1).red() - 210) <= 1,
-            "ICC sRGB preservation");
+    // Embedded profiles need libvips with lcms2 (not the OpenBSD package).
+    if (vips_icc_present()) {
+      auto icc = tmp.path() + "/icc.tif";
+      rgb8.icc_transform("srgb", vips::VImage::option()
+                                     ->set("input_profile", "srgb")
+                                     ->set("depth", 16))
+          .tiffsave(icc.toUtf8().constData());
+      auto iccInfo = doc.open(icc, {}, token);
+      require(iccInfo.text.contains("profil osadzony"), "embedded ICC");
+      require(std::abs(doc.tile(0, 0, 0).image.pixelColor(1, 1).red() - 210) <= 1,
+              "ICC sRGB preservation");
+    }
     auto rotated = tmp.path() + "/rotated.tif";
     image.set("orientation", 6);
     image.tiffsave(rotated.toUtf8().constData());

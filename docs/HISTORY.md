@@ -3,6 +3,69 @@
 Raporty `reports/…` wymienione niżej są lokalnymi logami z testów i nie są publikowane w repozytorium.
 
 
+## 0.13.0 — kopie, przenoszenie i instalacja na BSD
+
+`./run.sh backup`, `restore`, `export` i `import` działają jak w kylowy-term:
+
+- `backup --ustawienia` zapisuje do `backups/` ulubione, zakładki, język
+  i krycie interfejsu. `backup --program` dodaje źródła, historię git
+  (`ky-prism.git.bundle`) i zbudowany program.
+- `export --system` robi do `dist/` paczkę na inny komputer lub system,
+  kompilowaną na miejscu. `export --konto` dodaje gotowy program dla
+  innego konta tego samego systemu.
+- W rozpakowanej paczce `./run.sh` pokazuje plan, pyta i dopiero wtedy
+  przywraca ustawienia oraz instaluje program. Każda paczka ma `KOPIA.txt`
+  i `INSTALACJA.txt`.
+- Pliki z ustawieniami mają prawa 600 i nie zawierają zdjęć. Przed
+  przywróceniem program zapisuje kopię obecnych ustawień. `restore`
+  odrzuca ścieżki z `..`, nieznane pliki, zły format i dowiązania
+  symboliczne.
+
+Implementacja: `prismctl.py`. `run.sh` jest teraz w POSIX sh, a skrypty
+startowe `ky-prism` i `omarchy-prism` nie wymagają basha.
+`dependencies.py` zna FreeBSD (`pkg`) i OpenBSD (`pkg_add`, `doas`).
+Bez terminala potwierdza instalację pakietów sam. Opis: `docs/INSTALACJA.md`.
+
+Zmiany w kodzie dla innych systemów:
+
+- Kopiowanie bez nadpisywania używa `renameat2` tylko na Linuksie, a na
+  BSD `link()`.
+- Starszy interfejs Qt i jego testy budują się domyślnie tylko na Linuksie.
+- Cały projekt kompiluje się z `QT_NO_KEYWORDS` (`Q_SIGNALS`, `Q_EMIT`).
+  libvips 8.15 z Ubuntu 24.04 dołącza nagłówki GIO z polem `signals`,
+  które kolidowało z makrem Qt.
+- Makra `GRAPHENE_*_INIT` zastąpiono funkcjami `Gx::rect` i `Gx::point`
+  (ostrzeżenie clang o literałach złożonych C99).
+- Miniatury: libvips 8.15 (Ubuntu 24.04) zna opcję profilu jako
+  `export_profile`, nowsze jako `output_profile`. Program pyta zainstalowaną
+  bibliotekę, którą nazwę zna.
+- Testy shaderów linkują `OpenGL::OpenGL` (GLVND), a gdy go nie ma —
+  `OpenGL::GL` (OpenBSD).
+- Testy Python nie zakładają już Linuksa (`/usr/bin/python3`, plan
+  pakietów).
+- libvips bez lcms2 (pakiet OpenBSD): program sprawdza `vips_icc_present()`.
+  Zdjęcia z profilem pokazuje jako sRGB i pisze o tym w panelu, a miniatury
+  powstają bez profilu.
+- libvips bez libexif (pakiet OpenBSD): orientację odczytuje
+  `src/exif_orientation.h`. To parser samego znacznika 0x0112 z surowego
+  bloku EXIF, ze sprawdzaniem granic i z testem `exif_orientation`.
+
+Sprawdzenie w maszynach wirtualnych (KVM, oficjalne obrazy). Ta sama paczka
+`export --system` na każdym systemie: rozpakowanie, `./run.sh import`,
+`./run.sh install` (pakiety z oficjalnych repozytoriów, kompilacja, testy,
+instalacja do `~/.local`) i `ky-prism --version`:
+
+| System | GTK / Qt / libvips | CTest | testy Python |
+| --- | --- | --- | --- |
+| Ubuntu 24.04.5 LTS | 4.14.5 / 6.4.2 / 8.15.1 | 29/29 | 19 OK |
+| Arch Linux (Omarchy) | 4.24.1 / 6.12.0 / 8.18.7 | 29/29 | 19 OK |
+| FreeBSD 15.1-RELEASE | 4.20.4 / 6.11.2 / 8.18.6 | 12/12 | 19 OK |
+| OpenBSD 8.0 | 4.22.5 / 6.11.2 / 8.18.6 | 12/12 | 19 OK |
+
+Ubuntu 26.04 sprawdzono na komputerze deweloperskim. Na BSD nie buduje się
+starszy interfejs Qt z jego testami, stąd 12 zamiast 29. Maszyny nie miały
+pulpitu, więc nie uruchamiano okna programu ani testu `gtk_ui`.
+
 ## 0.13.0 — interfejs GTK 4 i regulowane krycie oprawy
 
 Okno programu jest teraz aplikacją **GTK 4** (Ubuntu 26.04: GTK 4.22; wymagane

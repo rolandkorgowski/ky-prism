@@ -1,3 +1,4 @@
+#include "exif_orientation.h"
 #include "nvjpeg_backend.h"
 #include "nvjpeg_abi.h"
 #include <QCoreApplication>
@@ -165,12 +166,15 @@ NvjpegBackend::thumbnail(const QString &path, const vips::VImage &header,
         throw std::runtime_error("nvJPEG: invalid ICC metadata");
       vips_image_set_blob_copy(image.get_image(), VIPS_META_ICC_NAME, profile,
                                n);
-      image = image.icc_transform(
-          "srgb",
-          vips::VImage::option()->set("embedded", true)->set("depth", 8));
+      // libvips without lcms2 (OpenBSD package): no ICC, the pixels stay sRGB.
+      if (vips_icc_present())
+        image = image.icc_transform(
+            "srgb",
+            vips::VImage::option()->set("embedded", true)->set("depth", 8));
     }
-    if (header.get_typeof(VIPS_META_ORIENTATION)) {
-      const int orientation = header.get_int(VIPS_META_ORIENTATION);
+    if (header.get_typeof(VIPS_META_ORIENTATION) ||
+        header.get_typeof(VIPS_META_EXIF_NAME)) {
+      const int orientation = exifOrientation(header);
       if (orientation < 1 || orientation > 8)
         throw std::runtime_error("nvJPEG: invalid EXIF orientation");
       image = image.copy();

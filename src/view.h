@@ -98,7 +98,7 @@ public:
   void stop() {
     cancel->store(true);
     pendingOpen = false;
-    emit loadingChanged(false);
+    Q_EMIT loadingChanged(false);
     settle.stop();
     refinement.stop();
     zoomAnimation.stop();
@@ -117,7 +117,7 @@ public:
             int(std::ceil(height() * devicePixelRatioF()))};
   }
   QString gpu;
-signals:
+Q_SIGNALS:
   void loadingChanged(bool);
   void status(const QString &);
   void metadata(const QString &);

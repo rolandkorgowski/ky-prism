@@ -25,7 +25,9 @@
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
+#if defined(__GLIBC__)
 #include <malloc.h>
+#endif
 #include <vips/vips8>
 
 namespace {
@@ -67,7 +69,7 @@ QImage render(GtkWidget *widget) {
   GskRenderNode *node = gtk_snapshot_free_to_node(snapshot);
   if (!node)
     return {};
-  graphene_rect_t bounds = GRAPHENE_RECT_INIT(0, 0, float(w), float(h));
+  graphene_rect_t bounds = Gx::rect(0, 0, float(w), float(h));
   g_autoptr(GdkTexture) texture =
       gsk_renderer_render_texture(gtk_native_get_renderer(native), node, &bounds);
   gsk_render_node_unref(node);
@@ -640,7 +642,9 @@ void readmeShot(const QString &photos, const QString &out) {
 }
 long rssKiB() {
   // Return freed heap pages first: measure what is held, not fragmentation.
+#if defined(__GLIBC__)
   malloc_trim(0);
+#endif
   QFile status("/proc/self/status");
   if (!status.open(QIODevice::ReadOnly))
     return -1;

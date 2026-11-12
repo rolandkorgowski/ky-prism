@@ -3,6 +3,7 @@
 #include "local_path.h"
 #include "nvjpeg_backend.h"
 #include "pixel_simd.h"
+#include "exif_orientation.h"
 #include "raster_source.h"
 #include "thumbnail_disk.h"
 #include <QDateTime>
@@ -20,6 +21,30 @@
 #include <vips/vips8>
 using vips::VImage;
 namespace {
+// libvips renamed thumbnail's export_profile to output_profile (8.16). Ask the
+// installed library which name it knows: Ubuntu 24.04 ships 8.15.
+// Without lcms2 there is no colour management: returns nullptr, which ends
+// the option list (callers pass the profile option last).
+const char *thumbnailProfileOption() {
+  static const char *const name = []() -> const char * {
+    if (!vips_icc_present())
+      return nullptr;
+    const char *found = "output_profile";
+    if (VipsOperation *op = vips_operation_new("thumbnail_source")) {
+      GParamSpec *spec = nullptr;
+      VipsArgumentClass *argumentClass = nullptr;
+      VipsArgumentInstance *argument = nullptr;
+      if (vips_object_get_argument(VIPS_OBJECT(op), "output_profile", &spec,
+                                   &argumentClass, &argument)) {
+        vips_error_clear();
+        found = "export_profile";
+      }
+      g_object_unref(op);
+    }
+    return found;
+  }();
+  return name;
+}
 void cancelled(const std::shared_ptr<std::atomic_bool> &t) {
   if (t->load())
     throw std::runtime_error("Anulowano miniaturę");
@@ -77,7 +102,7 @@ VImage memoryThumb(void *data, size_t length, int edge, int orientation = 1) {
   VipsImage *p = nullptr;
   if (vips_thumbnail_buffer(data, length, &p, edge, "height", edge, "size",
                             VIPS_SIZE_DOWN, "fail_on", VIPS_FAIL_ON_ERROR,
-                            "output_profile", "srgb", "no_rotate", true,
+                            "no_rotate", true, thumbnailProfileOption(), "srgb",
                             nullptr))
     throw vips::VError();
   VImage result(p);
@@ -228,9 +253,7 @@ QImage decodeThumbnail(const QString &path, int edge,
         n && n <= 2 * 1024 * 1024) {
       try {
         auto embedded = memoryThumb(const_cast<void *>(data), n, edge,
-                                    image.get_typeof(VIPS_META_ORIENTATION)
-                                        ? image.get_int(VIPS_META_ORIENTATION)
-                                        : 1);
+                                    exifOrientation(image));
         if (embeddedOnly ||
             std::max(embedded.width(), embedded.height()) >=
                 std::min(edge, std::max(image.width(), image.height())))
@@ -249,11 +272,21 @@ QImage decodeThumbnail(const QString &path, int edge,
   VipsImage *thumb = nullptr;
   int rc = vips_thumbnail_source(source, &thumb, edge, "height", edge, "size",
                                  VIPS_SIZE_DOWN, "fail_on", VIPS_FAIL_ON_ERROR,
-                                 "output_profile", "srgb", nullptr);
+                                 thumbnailProfileOption(), "srgb", nullptr);
 
   if (rc)
     throw vips::VError();
-  return output(VImage(thumb), token);
+  VImage result(thumb);
+  // libvips without libexif cannot turn the thumbnail upright by itself.
+  if (!image.get_typeof(VIPS_META_ORIENTATION)) {
+    const int orientation = exifOrientation(image);
+    if (orientation > 1) {
+      result = result.copy();
+      result.set(VIPS_META_ORIENTATION, orientation);
+      result = result.autorot();
+    }
+  }
+  return output(result, token);
 }
 ThumbnailCache::ThumbnailCache(QObject *parent)
     : QObject(parent), diskDirectory(ThumbnailDisk::root()) {

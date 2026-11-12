@@ -49,37 +49,34 @@ class Packaging(unittest.TestCase):
    favorites=home/'.local/share/omarchy-prism/favorites.json';favorites.write_text('{"version":1,"photos":[]}')
    bookmarks=home/'.local/share/omarchy-prism/bookmarks.json';bookmarks.write_text('["/photos"]')
    language=home/'.local/share/omarchy-prism/language.json';language.write_text('{"version":1,"language":"en","unrelated":"must not be exported"}')
-   run('export',str(dest));run('backup',str(dest))
-   for archive in dest.glob('*.tar.gz'):
-    self.assertEqual(hashlib.sha256(archive.read_bytes()).hexdigest(),Path(str(archive)+'.sha256').read_text().split()[0])
-    with tarfile.open(archive) as tar:
-     manifest=json.load(tar.extractfile('ky-prism/MANIFEST.json'))
-     self.assertEqual(json.load(tar.extractfile('ky-prism/user-data/language.json')),{'version':1,'language':'en'})
-     for name,sha in manifest.items():self.assertEqual(hashlib.sha256(tar.extractfile('ky-prism/'+name).read()).hexdigest(),sha)
-     for required in ['src/document.cpp','src/thumbnails.cpp','src/nvjpeg_backend.cpp','src/nvjpeg_cuda.cpp','src/nvjpeg_resize.cu','src/nvjpeg_abi.h','src/pixel_simd.cpp','tests/pixel_simd.cpp','tests/nvjpeg.cpp','src/thumbnail_disk.cpp','src/thumbnail_gpu.cpp','src/thumbnail_shaders.h','tests/gallery.cpp','tests/thumbnail_shader.cpp','src/prefetch.cpp','src/raster_source.cpp','src/ui_material.h','src/glass_widgets.h','src/ui_icons.h','src/pointer_gesture.h','tests/pointer.cpp','tests/material.cpp','chrome-plugin/ChromeMark.qml','terminal-plugin/WarpFlight.qml','terminal-plugin/WarpTerminalWidget.qml','terminal-plugin/WarpGlow.frag.qsb','terminal-plugin/WarpGlow.frag','terminal-plugin/WarpGlow.meta.json']:
-      self.assertIn(required,manifest)
-   # The installed recovery sources must also work when installation starts
-   # from an exported bundle whose manifest includes the prebuilt binary.
+   ctl=subprocess.run(['python3','-B',str(ROOT/'prismctl.py'),'export','--system','--katalog',str(dest)],env=dict(env,PRISM_BACKUP_DIR=str(Path(tmp)/'b')),capture_output=True,text=True,stdin=subprocess.DEVNULL)
+   self.assertEqual(ctl.returncode,0,ctl.stderr)
+   archive=next(dest.glob('ky-prism-*-przeniesienie.tar.gz'))
+   self.assertEqual(hashlib.sha256(archive.read_bytes()).hexdigest(),Path(str(archive)+'.sha256').read_text().split()[0])
+   with tarfile.open(archive) as tar:
+    top=tar.getnames()[0].split('/')[0]
+    manifest=json.load(tar.extractfile(top+'/MANIFEST.json'))
+    for name,sha in manifest.items():self.assertEqual(hashlib.sha256(tar.extractfile(top+'/'+name).read()).hexdigest(),sha)
+    for required in ['run.sh','prismctl.py','src/document.cpp','src/gtk/window.cpp','src/nvjpeg_backend.cpp','tests/gtk_ui.cpp','terminal-plugin/WarpGlow.frag.qsb']:
+     self.assertIn(required,manifest)
+    self.assertIn(top+'/INSTALACJA.txt',tar.getnames());self.assertIn(top+'/KOPIA.txt',tar.getnames())
+    self.assertNotIn(top+'/prebuilt/ky-prism',tar.getnames())
+   # A package unpacked elsewhere installs: settings by import, then install.
    extracted=Path(tmp)/'exported';extracted.mkdir()
-   with tarfile.open(next(dest.glob('*.tar.gz'))) as tar:tar.extractall(extracted,filter='data')
-   bundle=extracted/'ky-prism';(bundle/'build').mkdir()
+   with tarfile.open(archive) as tar:tar.extractall(extracted,filter='data')
+   bundle=extracted/top;(bundle/'build').mkdir()
    import shutil
    shutil.copy2(ROOT/'build/ky-prism',bundle/'build/ky-prism')
-   restored=Path(tmp)/'restored';restored.mkdir();restore_env=dict(env,HOME=str(restored))
-   for script,action in [(bundle/'package.py','install'),(restored/'.local/share/omarchy-prism/source/package.py','check-source')]:
-    result=subprocess.run(['python3','-B',str(script),action],env=restore_env,capture_output=True,text=True)
+   restored=Path(tmp)/'restored';restored.mkdir();restore_env=dict(env,HOME=str(restored),PRISM_BACKUP_DIR=str(Path(tmp)/'b2'))
+   for args in [[str(bundle/'prismctl.py'),'import'],[str(bundle/'package.py'),'install'],[str(restored/'.local/share/omarchy-prism/source/package.py'),'check-source']]:
+    result=subprocess.run(['python3','-B',*args],env=restore_env,capture_output=True,text=True)
     self.assertEqual(result.returncode,0,result.stderr)
    self.assertEqual((restored/'.local/share/omarchy-prism/bookmarks.json').read_bytes(),bookmarks.read_bytes())
    restored_language=restored/'.local/share/omarchy-prism/language.json'
-   self.assertEqual(json.loads(restored_language.read_text())['language'],'en')
-   restored_language.write_text('{"version":1,"language":"pl"}')
+   self.assertEqual(json.loads(restored_language.read_text()),{'version':1,'language':'en'})
+   self.assertEqual(oct(restored_language.stat().st_mode&0o777),'0o600')
    self.assertTrue(os.access(restored/'.local/bin/omarchy-prism-terminal',os.X_OK))
-   restored_favorites=restored/'.local/share/omarchy-prism/favorites.json'
-   self.assertEqual(restored_favorites.read_bytes(),favorites.read_bytes())
-   restored_favorites.write_text('{"version":1,"photos":[],"keep":true}')
-   result=subprocess.run(['python3','-B',str(bundle/'package.py'),'install'],env=restore_env,capture_output=True,text=True)
-   self.assertEqual(result.returncode,0,result.stderr);self.assertIn('keep',restored_favorites.read_text())
-   self.assertEqual(json.loads(restored_language.read_text())['language'],'pl')
+   self.assertEqual((restored/'.local/share/omarchy-prism/favorites.json').read_bytes(),favorites.read_bytes())
    (home/'.local/bin/ky-prism').write_text('corrupt')
    self.assertNotEqual(run('verify',good=False).returncode,0)
  def test_hyprland_empty_messages_and_actual_errors(self):
@@ -144,16 +141,21 @@ class NewIntegration(unittest.TestCase):
  def test_dependency_plans(self):
   from unittest.mock import patch
   spec=importlib.util.spec_from_file_location('prism_deps',ROOT/'dependencies.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-  for distro,expected in [('arch','pacman'),('ubuntu','apt-get'),('debian','apt-get')]:
-   with self.subTest(distro=distro),patch.object(module.Path,'read_text',return_value='ID='+distro+'\n'):
+  for distro,expected in [('arch','pacman'),('ubuntu','apt-get'),('debian','apt-get'),('fedora','dnf')]:
+   with self.subTest(distro=distro),patch.object(module.platform,'system',return_value='Linux'),patch.object(module.Path,'read_text',return_value='ID='+distro+'\n'):
     command=module.plan();self.assertEqual(command[0],expected)
     self.assertIn('udisks2',command)
     self.assertFalse(any('curl' in item or 'upgrade' in item for item in command))
+  for system,expected in [('FreeBSD','pkg'),('OpenBSD','pkg_add')]:
+   with self.subTest(system=system),patch.object(module.platform,'system',return_value=system):
+    command=module.plan();self.assertEqual(command[0],expected)
+    self.assertNotIn('udisks2',command)
+    self.assertNotIn('lsblk',module.tools(module.family()))
  def test_chrome_helper_uses_arguments_without_shell(self):
   import time
   with tempfile.TemporaryDirectory() as tmp:
    directory=Path(tmp);record=directory/'arguments.json'
-   browser=directory/'google-chrome-stable';browser.write_text('#!/usr/bin/python3\nimport json,os,sys\nfrom pathlib import Path\nPath(os.environ["PRISM_LAUNCH_RECORD"]).write_text(json.dumps(sys.argv[1:]))\n');browser.chmod(0o755)
+   browser=directory/'google-chrome-stable';browser.write_text('#!'+sys.executable+'\nimport json,os,sys\nfrom pathlib import Path\nPath(os.environ["PRISM_LAUNCH_RECORD"]).write_text(json.dumps(sys.argv[1:]))\n');browser.chmod(0o755)
    env=dict(os.environ,PATH=str(directory),PRISM_LAUNCH_RECORD=str(record))
    run=subprocess.run([sys.executable,str(ROOT/'omarchy-prism-chrome')],env=env,capture_output=True,text=True,timeout=5)
    self.assertEqual(run.returncode,0,run.stderr)

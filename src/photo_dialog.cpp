@@ -106,7 +106,7 @@ void PhotoDialogCache::pump() {
         else failed.insert(job.key,new bool(true));
       }
       pump();
-      if (active) emit changed();
+      if (active) Q_EMIT changed();
     });
     watcher->setFuture(QtConcurrent::run(&pool,[path=job.path,token] {
       try {

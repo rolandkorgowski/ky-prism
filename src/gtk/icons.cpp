@@ -62,7 +62,7 @@ GtkWidget *prism_cairo_canvas_new(int width, int height, CairoPaint paint) {
   auto *canvas = prism_canvas_new(
       width, height,
       [holder, paint = std::move(paint)](GtkSnapshot *snapshot, int w, int h) {
-        graphene_rect_t bounds = GRAPHENE_RECT_INIT(0, 0, float(w), float(h));
+        graphene_rect_t bounds = Gx::rect(0, 0, float(w), float(h));
         cairo_t *cr = gtk_snapshot_append_cairo(snapshot, &bounds);
         GdkRGBA ink{1, 1, 1, 1};
         if (*holder)
