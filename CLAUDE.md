@@ -30,6 +30,19 @@ FreeBSD i OpenBSD. Odpowiadaj po polsku.
   prawdziwe okno na pulpicie i podmieniają schowek. Na komputerze
   użytkownika uprzedź o tym przed uruchomieniem.
 
+## Testy i wyniki — zasady
+
+- **Tylko testy związane ze zmianą.** C++: `ctest --test-dir build -R <nazwa>`.
+  Python: `python3 -B -m unittest tests.test_<moduł>`.
+- **Pełny zestaw raz, przed wydaniem.** `./run.sh test` uruchamiaj raz przed
+  „publikuj”, wcześniej uprzedzając o oknie testowym i schowku.
+- **Wynik przefiltrowany** do podsumowania i błędów
+  (`grep -E "tests passed|Failed|FAIL|Error|^OK"`), bez pełnych logów
+  kompilacji.
+- **Tekst zamiast zrzutów ekranu,** gdy wystarczy: asercje w testach, tekst
+  paska stanu. Zrzut (`gtk-test --screenshots`) oglądaj tylko wtedy, gdy
+  zmiana dotyczy samego wyglądu.
+
 ## Budowanie i testy
 
 ```sh
