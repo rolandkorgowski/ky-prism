@@ -431,6 +431,10 @@ struct PhotoView::Impl : QObject {
     glBindVertexArray(vao);
     bool fading = false;
     const double w = width(), h = height();
+    // From 1:1 upwards full-resolution tiles are shown as they are: every
+    // photo pixel becomes a sharp block (no interpolation between pixels).
+    // Zoomed out, and for coarse placeholder layers, filtering stays on.
+    const bool exactPixels = zoom * dpr() >= 1.0 - 1e-9;
     auto draw = [&](Texture &tex, QRectF r, float u0, float v0, float u1,
                     float v1) {
       tex.used = ++clock;
@@ -448,6 +452,8 @@ struct PhotoView::Impl : QObject {
                                 rr, bottom, u1, v1, l,  top,    u0, v0,
                                 rr, bottom, u1, v1, rr, top,    u1, v0};
       glBindTexture(GL_TEXTURE_2D, tex.id);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
+                      tex.level == 0 && exactPixels ? GL_NEAREST : GL_LINEAR);
       glBindBuffer(GL_ARRAY_BUFFER, vbo);
       glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
       glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -511,8 +517,11 @@ struct PhotoView::Impl : QObject {
     graphene_rect_t bounds = Gx::rect(
         float(r.x()), float(r.y()), float(r.width()), float(r.height()));
     gtk_snapshot_push_clip(snapshot, &all);
-    gtk_snapshot_append_scaled_texture(snapshot, cpuTexture,
-                                       GSK_SCALING_FILTER_LINEAR, &bounds);
+    // Same rule without OpenGL, when the preview holds every photo pixel.
+    const bool exact = cpuPreview.size() == dimensions && zoom * dpr() >= 1.0 - 1e-9;
+    gtk_snapshot_append_scaled_texture(
+        snapshot, cpuTexture, exact ? GSK_SCALING_FILTER_NEAREST : GSK_SCALING_FILTER_LINEAR,
+        &bounds);
     gtk_snapshot_pop(snapshot);
   }
 

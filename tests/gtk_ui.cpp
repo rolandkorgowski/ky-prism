@@ -215,6 +215,37 @@ void scenario(const QString &photos, const QString &config,
   }
   shot(content(gtkWindow), "02-photo");
 
+  // --- magnified pixels stay sharp: no interpolation from 1:1 upwards ---
+  if (first->hardwareReady()) {
+    const QString stripes = work + "/stripes.png";
+    QImage pattern(64, 64, QImage::Format_RGB888); // 1-pixel black/white columns
+    for (int y = 0; y < 64; ++y)
+      for (int x = 0; x < 64; ++x)
+        pattern.setPixelColor(x, y, x % 2 ? Qt::white : Qt::black);
+    check(pattern.save(stripes, "PNG"), "stripes fixture");
+    window.open(stripes);
+    waitFor([&] { return first->imageSize() == QSize(64, 64) && !first->busy(); },
+            "stripes decoded");
+    window.trigger("actual");
+    first->scaleCentered(8.0);
+    waitFor([&] { return !first->busy(); }, "stripes magnified");
+    pump(400);
+    const auto frame = first->framebuffer();
+    int blended = 0, sampled = 0;
+    for (int y = frame.height() / 2 - 100; y < frame.height() / 2 + 100; y += 3)
+      for (int x = frame.width() / 2 - 100; x < frame.width() / 2 + 100; ++x) {
+        const int v = qGray(frame.pixel(x, y));
+        ++sampled;
+        if (v > 3 && v < 252)
+          ++blended;
+      }
+    check(sampled > 0 && blended == 0,
+          "8× zoom shows each photo pixel as a sharp block (no blended greys)");
+    window.open(photos + "/red.jpg");
+    waitFor([&] { return window.currentPhoto().endsWith("red.jpg") && !first->busy(); },
+            "red again after stripes");
+  }
+
   // --- zoom and pan ---
   check(window.trigger("actual"), "1:1 action");
   check(window.zoomText() == "100.0%", "1:1 means one image pixel per device pixel");

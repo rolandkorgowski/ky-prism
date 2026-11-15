@@ -3,6 +3,21 @@
 Raporty `reports/…` wymienione niżej są lokalnymi logami z testów i nie są publikowane w repozytorium.
 
 
+## 0.13.0 — ostre piksele przy powiększeniu
+
+Od 1:1 w górę płótno pokazuje każdy piksel zdjęcia jako ostry kwadrat
+(`GL_NEAREST` dla kafelków pełnej rozdzielczości). Wcześniej
+`GL_LINEAR` wygładzał przejścia między pikselami, więc w dużym
+powiększeniu obraz wyglądał na rozmyty, choć wartości pikseli były
+nienaruszone. Przy dokładnie 1:1 daje to także gwarancję piksel w piksel
+niezależnie od przesunięcia o ułamek piksela.
+
+Wygładzanie zostaje tam, gdzie jest potrzebne: przy oddaleniu (poniżej
+100 %) i dla zgrubnych kafelków zastępczych w trakcie wczytywania. Ścieżka
+bez OpenGL stosuje tę samą zasadę, gdy podgląd ma pełną rozdzielczość.
+Test `gtk_ui`: paski czarno-białe co 1 piksel w powiększeniu 8× nie mogą
+dać żadnego odcienia pośredniego. Bez poprawki test się nie udaje.
+
 ## 0.13.0 — drukowanie i praca w Claude Code z chmury
 
 **Drukowanie** (`Ctrl+P`, ikona na pasku, menu pod prawym przyciskiem)
