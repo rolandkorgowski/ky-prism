@@ -396,6 +396,8 @@ window.maximized .prism-root, window.fullscreen .prism-root, window.tiled .prism
 .prism-root gridview > child:selected, .prism-dialog-root gridview > child:selected { background-color: ACCENT22; border-color: ACCENT80; }
 .prism-dialog-root gridview > child { border-radius: 11px; padding: 5px; margin: 2px; border: 1px solid transparent; }
 .prism-root gridview > child box, .prism-dialog-root gridview > child box { margin: 0; border-spacing: 3px; }
+.prism-root columnview > listview > row.prism-drop-folder { background-color: ACCENT45; box-shadow: inset 0 0 0 2px ACCENT80; }
+.prism-root gridview > child.prism-drop-folder { background-color: ACCENT30; border-color: ACCENT80; }
 .prism-rowhead { font-weight: 700; }
 .prism-thumbname { font-size: 0.9em; }
 .prism-thumbmeta { font-size: 0.8em; color: FG60; }

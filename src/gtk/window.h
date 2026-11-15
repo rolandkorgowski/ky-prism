@@ -65,4 +65,11 @@ public:
   // Tests: print the selected/displayed photos to a PDF without the dialog.
   bool printToPdf(const QString &file, const struct PrintOptions &options);
   bool printing() const;
+  // Tests: drag and drop without a pointer. (x, y) are in the coordinates of
+  // the window's content; fromLibrary marks a drag started in the library.
+  // dropTargetAt: "none", "open", "compare" or "folder:<path>".
+  QString dropTargetAt(double x, double y, bool fromLibrary) const;
+  bool dropFiles(const QStringList &files, double x, double y, bool fromLibrary);
+  // Examining or copying files dropped on a folder (not while asking).
+  bool copyingToFolder() const;
 };

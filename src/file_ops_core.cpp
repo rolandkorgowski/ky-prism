@@ -72,27 +72,28 @@ bool identicalBytes(const QString &a, const QString &b,
          same(ys, ye) && same(xe, xn) && same(ye, yn);
 }
 } // namespace
-void FileOps::copy(const QString &source, const QString &destination,
-                   const std::shared_ptr<std::atomic_bool> &token,
-                   const Progress &progress) {
-  checkCancel(token);
-  if (source.contains(QChar::Null) || destination.contains(QChar::Null) ||
-      source.size() > 8192 || destination.size() > 8192)
+namespace {
+// umask() can only be read by setting it, so it is read once while the
+// program starts, before any worker thread exists.
+const mode_t creationMask = [] {
+  const mode_t mask = ::umask(022);
+  ::umask(mask);
+  return mask;
+}();
+void checkPath(const QString &path) {
+  if (path.isEmpty() || path.contains(QChar::Null) || path.size() > 8192)
     fail("Nieprawidłowa ścieżka.");
-  if (!regular(source))
-    fail("Źródło musi być zwykłym plikiem, bez dowiązania.");
-  QFile input(source);
-  if (!input.open(QIODevice::ReadOnly))
-    fail("Nie można odczytać źródła: " + input.errorString());
-  struct stat before{}, after{}, named{};
-  if (fstat(input.handle(), &before) || !S_ISREG(before.st_mode))
-    fail("Nieprawidłowe źródło.");
-  QFileInfo target(destination);
-  if (target.exists() || target.isSymLink())
-    fail("Plik docelowy już istnieje. Wybierz inną nazwę.");
-  QTemporaryFile temp(target.absolutePath() + "/.prism-copy-XXXXXX");
-  if (!temp.open())
-    fail("Nie można zapisać kopii w tym katalogu.");
+}
+// Copies the open source into `temp` (created in the target folder), checks
+// that the source did not change meanwhile, then gives the copy its
+// permission bits and the source's modification time and forces it to disk.
+// Until the caller publishes it, the copy has a hidden temporary name, so an
+// interruption at any point (cancel, crash, power cut) never leaves a
+// half-written file under the target name.
+void writeCopy(QFile &input, const struct stat &before, const QString &source,
+               QTemporaryFile &temp, mode_t mode,
+               const std::shared_ptr<std::atomic_bool> &token,
+               const Progress &progress) {
   QByteArray buffer(1024 * 1024, Qt::Uninitialized);
   qint64 done = 0;
   QElapsedTimer clock;
@@ -114,14 +115,112 @@ void FileOps::copy(const QString &source, const QString &destination,
   }
   if (progress)
     progress(done, before.st_size);
+  struct stat after{}, named{};
   if (fstat(input.handle(), &after) ||
       lstat(QFile::encodeName(source).constData(), &named) ||
       !same(before, after) || !same(after, named) || done != before.st_size)
     fail("Źródło zmieniło się podczas kopiowania. Kopii nie zapisano.");
   checkCancel(token);
-  if (!temp.flush() || fsync(temp.handle()))
+  if (!temp.flush())
+    fail("Nie można utrwalić kopii na dysku.");
+  // Best effort after the last write: FAT and exFAT media ignore or refuse
+  // permissions and times, which must not fail the copy.
+  (void)::fchmod(temp.handle(), mode);
+  const struct timespec times[2] = {before.st_atim, before.st_mtim};
+  (void)::futimens(temp.handle(), times);
+  if (fsync(temp.handle()))
     fail("Nie można utrwalić kopii na dysku.");
   checkCancel(token);
+}
+bool syncDirectory(const QString &path) {
+  int directory = ::open(QFile::encodeName(path).constData(),
+                         O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+  if (directory < 0)
+    return false;
+  const int result = fsync(directory);
+  ::close(directory);
+  return !result;
+}
+bool sameTarget(const struct stat &t, const CopyItem &item) {
+  return S_ISREG(t.st_mode) && quint64(t.st_dev) == item.targetDevice &&
+         quint64(t.st_ino) == item.targetInode &&
+         qint64(t.st_size) == item.targetSize &&
+         qint64(t.st_mtim.tv_sec) == item.targetModSec &&
+         qint64(t.st_mtim.tv_nsec) == item.targetModNsec &&
+         qint64(t.st_ctim.tv_sec) == item.targetChangeSec &&
+         qint64(t.st_ctim.tv_nsec) == item.targetChangeNsec;
+}
+qint64 milliseconds(const struct timespec &t) {
+  return qint64(t.tv_sec) * 1000 + qint64(t.tv_nsec) / 1000000;
+}
+// Replaces item.target with a copy of item.source. The old file stays
+// untouched until the complete copy is on disk; rename() then swaps the
+// names in one atomic step, so after a power cut the target is either the
+// old file or the new one, never a mix.
+void replaceFile(const CopyItem &item,
+                 const std::shared_ptr<std::atomic_bool> &token,
+                 const Progress &progress) {
+  checkCancel(token);
+  checkPath(item.source);
+  checkPath(item.target);
+  if (!regular(item.source))
+    fail("Źródło musi być zwykłym plikiem, bez dowiązania.");
+  QFile input(item.source);
+  if (!input.open(QIODevice::ReadOnly))
+    fail("Nie można odczytać źródła: " + input.errorString());
+  struct stat before{}, existing{};
+  if (fstat(input.handle(), &before) || !S_ISREG(before.st_mode))
+    fail("Nieprawidłowe źródło.");
+  const QFileInfo target(item.target);
+  const auto targetName = QFile::encodeName(target.absoluteFilePath());
+  const QString changed =
+      QString("Plik w folderze zmienił się od pytania, więc go nie nadpisano: %1")
+          .arg(target.fileName());
+  if (lstat(targetName.constData(), &existing) || !sameTarget(existing, item))
+    fail(changed);
+  if (existing.st_dev == before.st_dev && existing.st_ino == before.st_ino)
+    return; // the source itself: nothing to write
+  QTemporaryFile temp(target.absolutePath() + "/.prism-copy-XXXXXX");
+  if (!temp.open())
+    fail("Nie można zapisać kopii w tym katalogu.");
+  // The replacement keeps the permission bits of the file it replaces.
+  writeCopy(input, before, item.source, temp, existing.st_mode & 0777, token,
+            progress);
+  struct stat now{};
+  if (lstat(targetName.constData(), &now) || !sameTarget(now, item))
+    fail(changed);
+  if (::rename(QFile::encodeName(temp.fileName()).constData(),
+               targetName.constData()))
+    fail(QString("Nie można zastąpić pliku %1. Pozostał bez zmian.")
+             .arg(target.fileName()));
+  temp.setAutoRemove(false);
+  if (!syncDirectory(target.absolutePath()))
+    fail("Plik zastąpiono, ale system nie potwierdził utrwalenia katalogu.");
+}
+} // namespace
+void FileOps::copy(const QString &source, const QString &destination,
+                   const std::shared_ptr<std::atomic_bool> &token,
+                   const Progress &progress) {
+  checkCancel(token);
+  checkPath(source);
+  checkPath(destination);
+  if (!regular(source))
+    fail("Źródło musi być zwykłym plikiem, bez dowiązania.");
+  QFile input(source);
+  if (!input.open(QIODevice::ReadOnly))
+    fail("Nie można odczytać źródła: " + input.errorString());
+  struct stat before{};
+  if (fstat(input.handle(), &before) || !S_ISREG(before.st_mode))
+    fail("Nieprawidłowe źródło.");
+  QFileInfo target(destination);
+  if (target.exists() || target.isSymLink())
+    fail("Plik docelowy już istnieje. Wybierz inną nazwę.");
+  QTemporaryFile temp(target.absolutePath() + "/.prism-copy-XXXXXX");
+  if (!temp.open())
+    fail("Nie można zapisać kopii w tym katalogu.");
+  // A new copy gets the source's read/write bits, limited by the umask.
+  writeCopy(input, before, source, temp, before.st_mode & 0666 & ~creationMask,
+            token, progress);
   // Publish without overwriting: renameat2 works on Linux filesystems including
   // removable media.
   auto temporaryName = QFile::encodeName(temp.fileName()),
@@ -136,23 +235,178 @@ void FileOps::copy(const QString &source, const QString &destination,
   int published = -1;
   errno = ENOSYS;
 #endif
+  bool linked = false;
   if (!published)
     temp.setAutoRemove(false);
-  else if (errno == ENOSYS || errno == EINVAL || errno == EOPNOTSUPP)
+  else if (errno == ENOSYS || errno == EINVAL || errno == EOPNOTSUPP) {
     published = ::link(temporaryName.constData(), targetName.constData());
+    linked = !published;
+  }
   if (published)
     fail("Nie zapisano kopii — cel istnieje lub system plików nie pozwala na "
          "bezpieczny zapis.");
-  int directory = ::open(QFile::encodeName(target.absolutePath()).constData(),
-                         O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-  if (directory < 0)
-    fail("Kopia powstała, ale system nie potwierdził utrwalenia katalogu.");
-  if (directory >= 0) {
-    int result = fsync(directory);
-    ::close(directory);
-    if (result)
-      fail("Kopia powstała, ale system nie potwierdził utrwalenia katalogu.");
+  if (linked) {
+    // The copy now has both names; drop the temporary one before the folder
+    // is synced, so no hidden second name survives a power cut.
+    temp.close();
+    temp.remove();
   }
+  if (!syncDirectory(target.absolutePath()))
+    fail("Kopia powstała, ale system nie potwierdził utrwalenia katalogu.");
+}
+QList<CopyItem> FileOps::examineCopy(const QStringList &sources,
+                                     const QString &directory,
+                                     const std::shared_ptr<std::atomic_bool> &token,
+                                     const Progress &progress) {
+  if (sources.isEmpty() || sources.size() > 4096)
+    fail("Wybierz 1–4096 plików i istniejący katalog docelowy.");
+  checkPath(directory);
+  const QFileInfo folder(directory);
+  if (!folder.isDir())
+    fail("Wybierz 1–4096 plików i istniejący katalog docelowy.");
+  const QDir into(folder.absoluteFilePath());
+  QSet<QString> names;
+  QList<CopyItem> items;
+  QElapsedTimer clock;
+  clock.start();
+  for (const auto &path : sources) {
+    checkCancel(token);
+    checkPath(path);
+    const QFileInfo info(path);
+    const QString name = info.fileName();
+    if (name.isEmpty() || name == "." || name == "..")
+      fail("Nieprawidłowe źródło.");
+    if (names.contains(name))
+      fail("Dwa źródła mają tę samą nazwę: " + name);
+    names.insert(name);
+    CopyItem item;
+    item.source = info.absoluteFilePath();
+    item.target = into.filePath(name);
+    struct stat source{}, target{};
+    if (lstat(QFile::encodeName(item.source).constData(), &source) ||
+        !S_ISREG(source.st_mode)) {
+      item.state = CopyItem::Blocked;
+      item.note = "źródło jest dowiązaniem lub nie jest zwykłym plikiem";
+      items.append(item);
+      continue;
+    }
+    item.sourceSize = qint64(source.st_size);
+    item.sourceModified = milliseconds(source.st_mtim);
+    if (lstat(QFile::encodeName(item.target).constData(), &target)) {
+      if (errno == ENOENT)
+        item.state = CopyItem::Fresh;
+      else {
+        item.state = CopyItem::Blocked;
+        item.note = "nie można sprawdzić pliku w folderze";
+      }
+    } else if (S_ISLNK(target.st_mode)) {
+      item.state = CopyItem::Blocked;
+      item.note = "w folderze jest dowiązanie o tej nazwie";
+    } else if (S_ISDIR(target.st_mode)) {
+      item.state = CopyItem::Blocked;
+      item.note = "w folderze jest katalog o tej nazwie";
+    } else if (!S_ISREG(target.st_mode)) {
+      item.state = CopyItem::Blocked;
+      item.note = "w folderze jest plik specjalny o tej nazwie";
+    } else if (target.st_dev == source.st_dev &&
+               target.st_ino == source.st_ino) {
+      item.state = CopyItem::SameFile;
+    } else {
+      item.targetSize = qint64(target.st_size);
+      item.targetModified = milliseconds(target.st_mtim);
+      item.targetDevice = quint64(target.st_dev);
+      item.targetInode = quint64(target.st_ino);
+      item.targetModSec = qint64(target.st_mtim.tv_sec);
+      item.targetModNsec = qint64(target.st_mtim.tv_nsec);
+      item.targetChangeSec = qint64(target.st_ctim.tv_sec);
+      item.targetChangeNsec = qint64(target.st_ctim.tv_nsec);
+      item.state = item.targetSize == item.sourceSize &&
+                           identicalBytes(item.source, item.target, token, {})
+                       ? CopyItem::Identical
+                       : CopyItem::Exists;
+    }
+    items.append(item);
+    if (progress && clock.elapsed() >= 100) {
+      progress(items.size(), sources.size());
+      clock.restart();
+    }
+  }
+  return items;
+}
+CopyReport FileOps::copyItems(const QList<CopyItem> &items, bool overwrite,
+                              const std::shared_ptr<std::atomic_bool> &token,
+                              const Progress &progress) {
+  CopyReport report;
+  qint64 total = 0, done = 0;
+  QString folder;
+  for (const auto &item : items) {
+    const bool writes = item.state == CopyItem::Fresh ||
+                        (overwrite && item.state == CopyItem::Exists);
+    if (writes) {
+      if (item.sourceSize < 0 ||
+          item.sourceSize > std::numeric_limits<qint64>::max() - total) {
+        report.error = "Nieprawidłowy łączny rozmiar.";
+        return report;
+      }
+      total += item.sourceSize;
+      folder = QFileInfo(item.target).absolutePath();
+    }
+  }
+  if (!folder.isEmpty()) {
+    // A replaced file frees its space only after the rename, so every copy
+    // needs room of its own.
+    QStorageInfo disk(folder);
+    if (disk.isValid() && disk.isReady() && disk.bytesAvailable() < total) {
+      report.error = "Za mało wolnego miejsca na kopie.";
+      return report;
+    }
+  }
+  QElapsedTimer clock;
+  clock.start();
+  QString current;
+  try {
+    for (const auto &item : items) {
+      checkCancel(token);
+      current = QFileInfo(item.target).fileName();
+      auto step = [&](qint64 n, qint64) {
+        if (progress && clock.elapsed() >= 100) {
+          progress(done + n, total);
+          clock.restart();
+        }
+      };
+      switch (item.state) {
+      case CopyItem::Fresh:
+        copy(item.source, item.target, token, step);
+        done += item.sourceSize;
+        ++report.copied;
+        break;
+      case CopyItem::Exists:
+        if (!overwrite) {
+          ++report.skipped;
+          break;
+        }
+        replaceFile(item, token, step);
+        done += item.sourceSize;
+        ++report.replaced;
+        break;
+      case CopyItem::Identical:
+      case CopyItem::SameFile:
+        ++report.unchanged;
+        break;
+      case CopyItem::Blocked:
+        ++report.skipped;
+        break;
+      }
+    }
+  } catch (const std::exception &e) {
+    report.cancelled = token->load();
+    report.error = QString::fromUtf8(e.what());
+    report.failedFile = current;
+    return report;
+  }
+  if (progress)
+    progress(total, total);
+  return report;
 }
 QList<DuplicateGroup>
 FileOps::duplicates(const QString &root,

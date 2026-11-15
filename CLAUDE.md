@@ -73,7 +73,10 @@ python3 -B i18n/generate.py      # po zmianie i18n/en.json
   Kod musi kompilować się także na FreeBSD i OpenBSD (clang, brak
   `renameat2`, libvips bez lcms2 i libexif na OpenBSD).
 - **Pliki użytkownika.** Program nigdy nie nadpisuje ani nie zmienia jego
-  plików. Kopie i eksport odmawiają nadpisania.
+  plików. Kopie i eksport odmawiają nadpisania. Jedyny wyjątek to
+  przeciągnięcie zdjęć na folder: nadpisuje wyłącznie po wybraniu
+  „Nadpisz” w oknie pytania, atomowo (`FileOps::copyItems`) i tylko plik,
+  który się nie zmienił od pytania.
 - **Struktura:** silnik w `src/*.cpp`, okno GTK w `src/gtk/`, kopie,
   przenoszenie i paczki w `prismctl.py`, instalacja w `package.py`,
   zależności systemu w `dependencies.py`.

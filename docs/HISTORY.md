@@ -3,6 +3,66 @@
 Raporty `reports/…` wymienione niżej są lokalnymi logami z testów i nie są publikowane w repozytorium.
 
 
+## 0.13.0 — przeciąganie z lewej listy
+
+Zdjęcia z lewej listy (tryb listy i miniatur) można przeciągać myszą.
+Przeciąga się zdjęcie pod kursorem, a jeśli należy do zaznaczenia, całe
+zaznaczenie. Foldery nie są przeciągane.
+
+- **Do innych programów:** `GtkDragSource` z `GdkFileList`, który GTK
+  udostępnia też jako `text/uri-list`. Dozwolone jest tylko kopiowanie
+  (`GDK_ACTION_COPY`), więc żaden program nie przeniesie oryginału.
+- **Na zdjęcie w programie:** otwiera je; na panel porównania wstawia je do
+  porównania. Upuszczenia z innych programów działają jak dotąd (otwarcie).
+- **Na folder na liście** (tylko przeciąganie z tej listy): kopiowanie do
+  folderu w trzech krokach.
+  1. `FileOps::examineCopy` sprawdza w tle każdą nazwę i niczego nie
+     zapisuje. Plik może być nowy, inny o tej nazwie, identyczny co do bajtu
+     (porównanie bajt po bajcie), tym samym plikiem (to samo urządzenie
+     i i-węzeł) albo zablokowany (dowiązanie, folder lub plik specjalny
+     o tej nazwie, źródło niebędące zwykłym plikiem).
+  2. Tylko inne pliki o tej nazwie wywołują pytanie: Anuluj, Pomiń
+     istniejące (domyślne) albo Nadpisz. Okno pokazuje rozmiar i datę obu
+     wersji. Pliki identyczne i zablokowane są wymienione informacyjnie
+     i nigdy nie są zmieniane.
+  3. `FileOps::copyItems` kopiuje w tle z postępem na pasku stanu.
+
+**Bezpieczeństwo zapisu (także przy zaniku zasilania).** Każda kopia powstaje
+w ukrytym pliku tymczasowym `.prism-copy-XXXXXX` w folderze docelowym.
+Program sprawdza, czy źródło nie zmieniło się w trakcie, wywołuje `fsync`,
+a dopiero potem publikuje plik:
+
+- nowa nazwa: `renameat2(RENAME_NOREPLACE)` na Linuksie, `link()` na BSD;
+  nigdy niczego nie zastępuje,
+- nadpisanie: `rename()` w jednym atomowym kroku, wykonywany tylko wtedy, gdy
+  plik docelowy ma nadal to samo urządzenie, i-węzeł, rozmiar i czasy co
+  w chwili pytania. Zmieniony po pytaniu plik nie jest nadpisywany.
+
+Na koniec program wywołuje `fsync` folderu. Po zaniku zasilania plik docelowy
+jest więc w całości stary albo w całości nowy (na zwykłych systemach plików
+POSIX: ext4, btrfs, xfs, ZFS, UFS/FFS). FAT i exFAT na pendrive'ach nie
+gwarantują atomowego `rename()`. Po przerwaniu w folderze może zostać
+ukryty plik `.prism-copy-…`, czyli niedokończona kopia, którą można usunąć.
+Oryginały są tylko czytane.
+
+Zmiana dla wszystkich kopii (eksport `Ctrl+E`, kopie na USB, przeciąganie):
+kopia dostaje prawa odczytu i zapisu źródła ograniczone przez umask (dotąd
+zawsze `0600`) oraz czas modyfikacji źródła. Nadpisany plik zachowuje swoje
+dotychczasowe prawa. Na FAT/exFAT te ustawienia są pomijane.
+
+Testy:
+
+- `file_copy` (bez ekranu) sprawdza: klasyfikację, „Pomiń” i „Nadpisz”,
+  plik zmieniony po pytaniu, cel podmieniony na dowiązanie, plik, który
+  pojawił się w międzyczasie, kopiowanie na samego siebie, anulowanie
+  i brak plików tymczasowych. Ścieżkę BSD (`link()`) sprawdzono jednorazowo
+  na Linuksie z wyłączonym `renameat2`.
+- `gtk_ui` wywołuje prawdziwe procedury przeciągania i upuszczania: zawartość
+  przeciągania, cele na liście i miniaturach, porównanie, wszystkie trzy
+  odpowiedzi oraz zamknięcie okna w trakcie pytania.
+
+Samego ruchu myszą testy nie symulują. Trzeba go sprawdzić ręcznie.
+
 ## 0.13.0 — ostre piksele przy powiększeniu
 
 Od 1:1 w górę płótno pokazuje każdy piksel zdjęcia jako ostry kwadrat

@@ -220,6 +220,12 @@ To see what is missing without installing anything:
   and shows a live preview of the sheet. Settings are remembered.
 - Right-click menu on the photo: copy, export, print, favourites, EXIF, full
   screen.
+- Drag and drop from the library (list and thumbnails): drag photos to other
+  programs (copy only), onto the photo to open it, onto the second photo to
+  compare, or onto a folder in the list to copy them there. A file of the
+  same name is never overwritten without asking: Cancel, Skip existing or
+  Overwrite. Copies are written to a temporary file, synced to disk and then
+  renamed in one step, so an interruption never leaves a half-written photo.
 - Favourites, bookmarks, EXIF panel, copying to USB drives and duplicate
   search. Originals are never modified.
 - Adjustable interface opacity (`Ctrl+Alt+O`). It changes only the toolbars

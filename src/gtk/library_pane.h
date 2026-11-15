@@ -44,6 +44,23 @@ public:
   // rather than on the header, a scrollbar or empty space.
   bool entryAt(double x, double y) const;
   void selectRows(const QList<int> &rows);
+  // Entry at a point of the visible view: its path, empty on the header, a
+  // scrollbar or empty space.
+  QString pathAt(double x, double y, bool *isDirectory = nullptr) const;
+  // Centre of the row or thumbnail showing `path`, in the visible view's
+  // coordinates; false when it is not on screen.
+  bool pointOf(const QString &path, double *x, double *y) const;
+
+  // Drag and drop. A drag started on a photo carries that photo, and the
+  // rest of the selection when the photo is part of it; folders never drag.
+  // Other programs receive a file list (text/uri-list), copy only.
+  QStringList dragFiles(double x, double y) const;
+  GdkContentProvider *dragContent(double x, double y) const; // new reference
+  // True while `drag` is a drag that a library pane started.
+  static bool ownsDrag(GdkDrag *drag);
+  // Marks the folder at (x, y) as the drop target; anything else clears it.
+  void showDropFolder(double x, double y);
+  void clearDropFolder();
 
   // Plain primary click on a file (no Ctrl/Shift): open it.
   std::function<void(const QString &path)> fileClicked;

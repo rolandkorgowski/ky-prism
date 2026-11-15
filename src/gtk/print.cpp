@@ -19,17 +19,7 @@
 namespace {
 constexpr double captionPoints = 11.0;
 
-// Polish plural: 1 strona, 2–4 strony (but 12–14 stron), 5+ stron.
-int pluralForm(int n) {
-  if (n == 1)
-    return 0;
-  const int last = n % 10, lastTwo = n % 100;
-  return last >= 2 && last <= 4 && !(lastTwo >= 12 && lastTwo <= 14) ? 1 : 2;
-}
-QString counted(int n, const char *one, const char *few, const char *many) {
-  const char *forms[] = {one, few, many};
-  return QString::fromUtf8(forms[pluralForm(n)]).arg(n);
-}
+using Ui::counted;
 QString sentMessage(int pages) {
   return counted(pages, "Wysłano do drukarki: %1 strona", "Wysłano do drukarki: %1 strony",
                  "Wysłano do drukarki: %1 stron");

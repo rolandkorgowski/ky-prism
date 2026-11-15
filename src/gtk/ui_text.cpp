@@ -80,6 +80,14 @@ GtkWidget *decorate(GtkWidget *button, const QString &symbol,
 
 namespace Ui {
 QString tr(const QString &source) { return PrismLanguage::text(source); }
+QString counted(int n, const char *one, const char *few, const char *many) {
+  const int last = n % 10, lastTwo = n % 100;
+  const char *form = n == 1 ? one
+                     : last >= 2 && last <= 4 && !(lastTwo >= 12 && lastTwo <= 14)
+                         ? few
+                         : many;
+  return QString::fromUtf8(form).arg(n);
+}
 QString mnemonic(const QString &translated) {
   QString out;
   out.reserve(translated.size() + 2);

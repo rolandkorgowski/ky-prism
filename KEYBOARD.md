@@ -55,6 +55,24 @@ kopiuje wyświetlone zdjęcie do schowka. Prawy przycisk myszy na zdjęciu, klaw
 Menu lub Shift+F10 otwiera menu: kopiuj do schowka, eksportuj kopię pliku,
 ulubione, EXIF, pełny ekran.
 
+## Przeciąganie myszą z lewej listy
+
+W trybie listy i miniatur zdjęcie można przeciągnąć lewym przyciskiem myszy.
+Jeśli zdjęcie należy do zaznaczenia (Ctrl/Shift+klik), przeciąga się całe
+zaznaczenie. Foldery nie są przeciągane.
+
+- **Do innego programu** (menedżer plików, przeglądarka, komunikator)
+  przeciągnięcie przekazuje pliki tylko do skopiowania. Oryginał zostaje
+  na miejscu.
+- **Na zdjęcie w programie** otwiera je; na drugie zdjęcie porównania
+  wstawia je do porównania.
+- **Na folder na liście** kopiuje zdjęcia do tego folderu (folder podświetla
+  się pod kursorem). Gdy jest tam już **inny** plik o tej samej nazwie,
+  pojawia się pytanie: Anuluj, Pomiń istniejące (domyślne) albo Nadpisz.
+  Bez wybrania „Nadpisz” nic nie zostanie nadpisane. Pliki identyczne co do
+  bajtu, dowiązania, foldery i pliki specjalne o tej nazwie nigdy nie są
+  zmieniane.
+
 ## Zakładki i ulubione
 
 - Ctrl+F: filtr; Tab przechodzi do tabeli, Enter otwiera zaznaczoną pozycję.

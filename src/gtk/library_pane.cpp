@@ -9,6 +9,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QDirIterator>
+#include <QFile>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
 #include <QFutureWatcher>
@@ -97,7 +98,9 @@ struct RowIcon {
 struct LibraryPane::Impl : QObject {
   LibraryPane *q;
   ThumbnailCache *cache;
-  bool photosOnly, stopped = false, scanInFlight = false, rescanQueued = false;
+  bool photosOnly, stopped = false, scanInFlight = false, rescanQueued = false,
+       dragged = false;
+  GtkWidget *dropRow = nullptr; // folder highlighted as the drop target
   GtkWidget *stack = nullptr, *listScroll = nullptr, *gridScroll = nullptr,
             *columnView = nullptr, *gridView = nullptr;
   GtkColumnViewColumn *nameColumn = nullptr, *sizeColumn = nullptr;
@@ -468,6 +471,21 @@ struct LibraryPane::Impl : QObject {
           gtk_widget_queue_draw(icon);
           gtk_label_set_text(GTK_LABEL(label), Gx::u8(entry->name).constData());
           gtk_widget_set_tooltip_text(row, Gx::u8(entry->path).constData());
+          // The entry itself, for hit tests (drag and drop).
+          auto *object =
+              reinterpret_cast<PrismEntry *>(gtk_list_item_get_item(item));
+          g_object_set_data_full(
+              G_OBJECT(row), "prism-entry",
+              new std::shared_ptr<Entry>(*object->entry), +[](gpointer data) {
+                delete static_cast<std::shared_ptr<Entry> *>(data);
+              });
+        },
+        nullptr);
+    Gx::connect(
+        factory, "unbind",
+        +[](GtkSignalListItemFactory *, GtkListItem *item, gpointer) {
+          if (auto *row = gtk_list_item_get_child(item))
+            g_object_set_data(G_OBJECT(row), "prism-entry", nullptr);
         },
         nullptr);
     return factory;
@@ -513,6 +531,147 @@ struct LibraryPane::Impl : QObject {
     }
     return false;
   }
+  // The list item (column-view row or grid child) at (x, y) in `view`.
+  static GtkWidget *itemAt(GtkWidget *view, double x, double y) {
+    for (auto *hit = gtk_widget_pick(view, x, y, GTK_PICK_DEFAULT);
+         hit && hit != view; hit = gtk_widget_get_parent(hit)) {
+      const QString node = Gx::qs(gtk_widget_get_css_name(hit));
+      if (node == "header" || node == "scrollbar")
+        return nullptr;
+      if (node == "row" || node == "child")
+        return hit;
+    }
+    return nullptr;
+  }
+  // Entry shown by a list item (searched in its cells).
+  static std::shared_ptr<Entry> entryIn(GtkWidget *widget) {
+    if (auto *cell = static_cast<Cell *>(
+            g_object_get_data(G_OBJECT(widget), "prism-cell")))
+      return cell->entry;
+    if (auto *held = static_cast<std::shared_ptr<Entry> *>(
+            g_object_get_data(G_OBJECT(widget), "prism-entry")))
+      return *held;
+    for (auto *child = gtk_widget_get_first_child(widget); child;
+         child = gtk_widget_get_next_sibling(child))
+      if (auto found = entryIn(child))
+        return found;
+    return nullptr;
+  }
+  static std::shared_ptr<Entry> entryAt(GtkWidget *view, double x, double y) {
+    auto *item = itemAt(view, x, y);
+    return item ? entryIn(item) : nullptr;
+  }
+  QStringList dragFiles(GtkWidget *view, double x, double y) const {
+    const auto entry = entryAt(view, x, y);
+    if (!entry || entry->dir)
+      return {};
+    QStringList files{entry->path};
+    const auto selected = q->selectedFiles();
+    if (selected.contains(entry->path))
+      for (const auto &path : selected)
+        if (path != entry->path)
+          files.append(path);
+    return files;
+  }
+  static GdkContentProvider *contentFor(const QStringList &files) {
+    if (files.isEmpty())
+      return nullptr;
+    GSList *list = nullptr;
+    for (auto it = files.crbegin(); it != files.crend(); ++it)
+      list = g_slist_prepend(
+          list, g_file_new_for_path(QFile::encodeName(*it).constData()));
+    GdkFileList *fileList = gdk_file_list_new_from_list(list);
+    g_slist_free_full(list, g_object_unref);
+    auto *provider = gdk_content_provider_new_typed(GDK_TYPE_FILE_LIST, fileList);
+    g_boxed_free(GDK_TYPE_FILE_LIST, fileList);
+    return provider;
+  }
+  static GdkDrag *&activeDrag() {
+    static GdkDrag *drag = nullptr;
+    return drag;
+  }
+  void watchDrags(GtkWidget *view) {
+    auto *source = gtk_drag_source_new();
+    // Copy only: another program must never move (remove) the original.
+    gtk_drag_source_set_actions(source, GDK_ACTION_COPY);
+    g_object_set_data(G_OBJECT(source), "prism-view", view);
+    Gx::connect(
+        source, "prepare",
+        +[](GtkDragSource *source, double x, double y,
+            gpointer data) -> GdkContentProvider * {
+          auto *self = static_cast<Impl *>(data);
+          if (self->stopped)
+            return nullptr;
+          auto *view =
+              GTK_WIDGET(g_object_get_data(G_OBJECT(source), "prism-view"));
+          const auto files = self->dragFiles(view, x, y);
+          if (files.isEmpty())
+            return nullptr;
+          // Drag icon: a still picture of the row or thumbnail.
+          if (auto *item = itemAt(view, x, y)) {
+            auto *live = gtk_widget_paintable_new(item);
+            auto *still = gdk_paintable_get_current_image(live);
+            graphene_point_t in = Gx::point(float(x), float(y)), out;
+            const bool mapped = gtk_widget_compute_point(view, item, &in, &out);
+            gtk_drag_source_set_icon(source, still, mapped ? int(out.x) : 0,
+                                     mapped ? int(out.y) : 0);
+            g_object_unref(still);
+            g_object_unref(live);
+          }
+          return contentFor(files);
+        },
+        this);
+    Gx::connect(
+        source, "drag-begin",
+        +[](GtkDragSource *, GdkDrag *drag, gpointer data) {
+          static_cast<Impl *>(data)->dragged = true;
+          auto *&active = activeDrag();
+          if (active)
+            g_object_remove_weak_pointer(G_OBJECT(active),
+                                         reinterpret_cast<gpointer *>(&active));
+          active = drag;
+          g_object_add_weak_pointer(G_OBJECT(drag),
+                                    reinterpret_cast<gpointer *>(&active));
+        },
+        this);
+    Gx::connect(
+        source, "drag-end",
+        +[](GtkDragSource *, GdkDrag *drag, gboolean, gpointer data) {
+          auto *self = static_cast<Impl *>(data);
+          self->clearDropFolder();
+          auto *&active = activeDrag();
+          if (active == drag) {
+            g_object_remove_weak_pointer(G_OBJECT(active),
+                                         reinterpret_cast<gpointer *>(&active));
+            active = nullptr;
+          }
+        },
+        this);
+    gtk_widget_add_controller(view, GTK_EVENT_CONTROLLER(source));
+  }
+  void showDropFolder(GtkWidget *view, double x, double y) {
+    auto *item = itemAt(view, x, y);
+    const auto entry = item ? entryIn(item) : nullptr;
+    if (!entry || !entry->dir)
+      item = nullptr;
+    if (item == dropRow)
+      return;
+    clearDropFolder();
+    if (!item)
+      return;
+    dropRow = item;
+    g_object_add_weak_pointer(G_OBJECT(dropRow),
+                              reinterpret_cast<gpointer *>(&dropRow));
+    gtk_widget_add_css_class(dropRow, "prism-drop-folder");
+  }
+  void clearDropFolder() {
+    if (!dropRow)
+      return;
+    gtk_widget_remove_css_class(dropRow, "prism-drop-folder");
+    g_object_remove_weak_pointer(G_OBJECT(dropRow),
+                                 reinterpret_cast<gpointer *>(&dropRow));
+    dropRow = nullptr;
+  }
   void watchClicks(GtkWidget *view) {
     auto *legacy = gtk_event_controller_legacy_new();
     gtk_event_controller_set_propagation_phase(legacy, GTK_PHASE_CAPTURE);
@@ -522,9 +681,19 @@ struct LibraryPane::Impl : QObject {
         +[](GtkEventControllerLegacy *controller, GdkEvent *event,
                        gpointer data) -> gboolean {
           auto *self = static_cast<Impl *>(data);
-          if (gdk_event_get_event_type(event) != GDK_BUTTON_RELEASE ||
+          const auto type = gdk_event_get_event_type(event);
+          if ((type != GDK_BUTTON_PRESS && type != GDK_BUTTON_RELEASE) ||
               gdk_button_event_get_button(event) != GDK_BUTTON_PRIMARY)
             return FALSE;
+          // A press that became a drag is not a click.
+          if (type == GDK_BUTTON_PRESS) {
+            self->dragged = false;
+            return FALSE;
+          }
+          if (self->dragged) {
+            self->dragged = false;
+            return FALSE;
+          }
           if (gdk_event_get_modifier_state(event) &
               (GDK_CONTROL_MASK | GDK_SHIFT_MASK))
             return FALSE;
@@ -602,6 +771,7 @@ struct LibraryPane::Impl : QObject {
                      },
                      this);
     watchClicks(columnView);
+    watchDrags(columnView);
     listScroll = gtk_scrolled_window_new();
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(listScroll),
                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
@@ -619,6 +789,7 @@ struct LibraryPane::Impl : QObject {
                      },
                      this);
     watchClicks(gridView);
+    watchDrags(gridView);
     gridScroll = gtk_scrolled_window_new();
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(gridScroll),
                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
@@ -673,6 +844,7 @@ LibraryPane::LibraryPane(ThumbnailCache *thumbnails, bool photosOnly)
 }
 LibraryPane::~LibraryPane() {
   *d->alive = false;
+  d->clearDropFolder(); // its weak pointer lives in this object
   stop();
   d->pool.waitForDone();
   // Destroyed before its window: remove both views (and with them every
@@ -813,6 +985,49 @@ QStringList LibraryPane::names() const {
 bool LibraryPane::entryAt(double x, double y) const {
   return Impl::onItem(focusWidget(), x, y);
 }
+QString LibraryPane::pathAt(double x, double y, bool *isDirectory) const {
+  const auto entry = Impl::entryAt(focusWidget(), x, y);
+  if (isDirectory)
+    *isDirectory = entry && entry->dir;
+  return entry ? entry->path : QString();
+}
+bool LibraryPane::pointOf(const QString &path, double *x, double *y) const {
+  auto *view = focusWidget();
+  std::function<GtkWidget *(GtkWidget *)> search =
+      [&](GtkWidget *widget) -> GtkWidget * {
+    const QString node = Gx::qs(gtk_widget_get_css_name(widget));
+    if ((node == "row" || node == "child") && gtk_widget_get_mapped(widget)) {
+      const auto entry = Impl::entryIn(widget);
+      if (entry && entry->path == path)
+        return widget;
+    }
+    for (auto *child = gtk_widget_get_first_child(widget); child;
+         child = gtk_widget_get_next_sibling(child))
+      if (auto *found = search(child))
+        return found;
+    return nullptr;
+  };
+  auto *item = search(view);
+  graphene_rect_t bounds;
+  if (!item || !gtk_widget_compute_bounds(item, view, &bounds))
+    return false;
+  *x = bounds.origin.x + bounds.size.width / 2;
+  *y = bounds.origin.y + bounds.size.height / 2;
+  return true;
+}
+QStringList LibraryPane::dragFiles(double x, double y) const {
+  return d->dragFiles(focusWidget(), x, y);
+}
+GdkContentProvider *LibraryPane::dragContent(double x, double y) const {
+  return Impl::contentFor(dragFiles(x, y));
+}
+bool LibraryPane::ownsDrag(GdkDrag *drag) {
+  return drag && drag == Impl::activeDrag();
+}
+void LibraryPane::showDropFolder(double x, double y) {
+  d->showDropFolder(focusWidget(), x, y);
+}
+void LibraryPane::clearDropFolder() { d->clearDropFolder(); }
 bool LibraryPane::activateRow(int row) {
   if (row < 0 || row >= count())
     return false;

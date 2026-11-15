@@ -19,10 +19,13 @@
 #include "ui_text.h"
 #include "window_control.h"
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QDirIterator>
+#include <QFile>
 #include <QFileInfo>
 #include <QFutureWatcher>
+#include <QLocale>
 #include <QMap>
 #include <QProcess>
 #include <QRegularExpression>
@@ -61,6 +64,13 @@ struct ClipboardImage {
   QSize size, original;
   bool cancelled = false;
 };
+// Copy into a folder dropped on: the examination result.
+struct DropCheck {
+  QList<CopyItem> items;
+  QString error;
+  bool cancelled = false;
+};
+enum class DropSpot { None, Open, Compare, Folder };
 // Larger photographs are downscaled for the clipboard: 50 Mpx is about
 // 200 MB of pixels in the applications that receive it.
 constexpr qint64 clipboardPixels = 50'000'000;
@@ -145,6 +155,14 @@ struct PrismWindow::Impl : QObject {
   std::shared_ptr<std::atomic_bool> exportCancel =
       std::make_shared<std::atomic_bool>(true);
   QString exportFolder;
+  // Drag and drop onto a folder of the library: examine, ask, copy.
+  QThreadPool dropPool;
+  QFutureWatcher<DropCheck> dropCheck;
+  QFutureWatcher<CopyReport> dropCopy;
+  std::shared_ptr<std::atomic_bool> dropCancel =
+      std::make_shared<std::atomic_bool>(true);
+  QString dropFolder, dropSkipped; // dropSkipped: why files were left out
+  bool dropAsking = false;
   std::shared_ptr<std::atomic_bool> scanCancelled =
       std::make_shared<std::atomic_bool>(false);
   QFutureWatcher<QString> storageWatcher;
@@ -1887,6 +1905,11 @@ struct PrismWindow::Impl : QObject {
     scanPool.setThreadPriority(QThread::LowPriority);
     clipboardPool.setMaxThreadCount(1);
     exportPool.setMaxThreadCount(1);
+    dropPool.setMaxThreadCount(1);
+    QObject::connect(&dropCheck, &QFutureWatcher<DropCheck>::finished, this,
+                     [this] { dropChecked(); });
+    QObject::connect(&dropCopy, &QFutureWatcher<CopyReport>::finished, this,
+                     [this] { dropCopied(); });
     QObject::connect(&clipboardWatcher,
                      &QFutureWatcher<ClipboardImage>::finished, this,
                      [this] { clipboardReady(); });
@@ -2057,19 +2080,52 @@ struct PrismWindow::Impl : QObject {
     connectEngines();
     registerShortcuts();
 
+    // Files dropped on the window: open them, compare them, or (dragged
+    // from the library onto one of its folders) copy them there.
     auto *drop = gtk_drop_target_new(GDK_TYPE_FILE_LIST, GDK_ACTION_COPY);
+    auto hover = +[](GtkDropTarget *target, double x, double y,
+                     gpointer data) -> GdkDragAction {
+      auto *self = static_cast<Impl *>(data);
+      QString folder;
+      const auto spot = self->dropSpot(x, y, fromLibrary(target), &folder);
+      if (spot == DropSpot::Folder) {
+        graphene_point_t in = Gx::point(float(x), float(y)), out;
+        if (gtk_widget_compute_point(self->root,
+                                     self->libraryPane->focusWidget(), &in,
+                                     &out))
+          self->libraryPane->showDropFolder(out.x, out.y);
+      } else
+        self->libraryPane->clearDropFolder();
+      return spot == DropSpot::None ? GdkDragAction(0) : GDK_ACTION_COPY;
+    };
+    Gx::connect(drop, "enter", hover, this);
+    Gx::connect(drop, "motion", hover, this);
+    Gx::connect(
+        drop, "leave",
+        +[](GtkDropTarget *, gpointer data) {
+          static_cast<Impl *>(data)->libraryPane->clearDropFolder();
+        },
+        this);
     Gx::connect(
         drop, "drop",
-        +[](GtkDropTarget *, const GValue *value, double, double,
+        +[](GtkDropTarget *target, const GValue *value, double x, double y,
             gpointer data) -> gboolean {
-          auto *files = static_cast<GSList *>(g_value_get_boxed(value));
-          if (!files || !G_IS_FILE(files->data))
+          auto *self = static_cast<Impl *>(data);
+          self->libraryPane->clearDropFolder();
+          auto *list = static_cast<GdkFileList *>(g_value_get_boxed(value));
+          if (!list)
             return FALSE;
-          g_autofree char *name = g_file_get_path(G_FILE(files->data));
-          if (!name)
-            return FALSE;
-          static_cast<Impl *>(data)->open(QString::fromLocal8Bit(name), true);
-          return TRUE;
+          QStringList paths;
+          GSList *files = gdk_file_list_get_files(list);
+          for (auto *l = files; l; l = l->next) {
+            if (!G_IS_FILE(l->data))
+              continue;
+            g_autofree char *name = g_file_get_path(G_FILE(l->data));
+            if (name)
+              paths.append(QFile::decodeName(name));
+          }
+          g_slist_free(files);
+          return self->dropFiles(paths, x, y, fromLibrary(target));
         },
         this);
     gtk_widget_add_controller(root, GTK_EVENT_CONTROLLER(drop));
@@ -2104,6 +2160,264 @@ struct PrismWindow::Impl : QObject {
     updateStorage();
     gtk_window_set_focus(window, welcomeButton);
   }
+  // ------------------------------------------------------ drag and drop ---
+  static bool fromLibrary(GtkDropTarget *target) {
+    auto *current = gtk_drop_target_get_current_drop(target);
+    return current && LibraryPane::ownsDrag(gdk_drop_get_drag(current));
+  }
+  // What dropping at (x, y) of the window does. Photos dragged from the
+  // library are copied only onto one of its folders; dropped anywhere else
+  // on the list they do nothing. Folders of other programs' drops are not
+  // copy targets: such drops open the file, as before.
+  DropSpot dropSpot(double x, double y, bool library, QString *folder) const {
+    auto *hit = gtk_widget_pick(root, x, y, GTK_PICK_DEFAULT);
+    auto inside = [hit](GtkWidget *area) {
+      return hit && area && (hit == area || gtk_widget_is_ancestor(hit, area));
+    };
+    if (libraryPane && inside(libraryPane->widget())) {
+      if (!library)
+        return DropSpot::Open;
+      graphene_point_t in = Gx::point(float(x), float(y)), out;
+      bool isDirectory = false;
+      QString path;
+      if (gtk_widget_compute_point(root, libraryPane->focusWidget(), &in, &out))
+        path = libraryPane->pathAt(out.x, out.y, &isDirectory);
+      if (path.isEmpty() || !isDirectory)
+        return DropSpot::None;
+      if (folder)
+        *folder = path;
+      return DropSpot::Folder;
+    }
+    if (comparing() && inside(comparePanel))
+      return DropSpot::Compare;
+    return DropSpot::Open;
+  }
+  bool dropFiles(const QStringList &files, double x, double y, bool library) {
+    if (isShuttingDown || files.isEmpty())
+      return false;
+    QString folder;
+    switch (dropSpot(x, y, library, &folder)) {
+    case DropSpot::None:
+      return false;
+    case DropSpot::Folder:
+      copyToFolder(files, folder);
+      return true;
+    case DropSpot::Compare:
+      if (QFileInfo(files.first()).isFile()) {
+        showComparison(files.first());
+        return true;
+      }
+      break;
+    case DropSpot::Open:
+      break;
+    }
+    open(files.first(), true);
+    return true;
+  }
+  bool dropBusy() const {
+    return dropCheck.isRunning() || dropCopy.isRunning() || dropAsking;
+  }
+  QString dropFolderName() const { return QFileInfo(dropFolder).fileName(); }
+  // Step 1: examine every file in the background. Nothing is written yet.
+  void copyToFolder(const QStringList &files, const QString &folder) {
+    if (isShuttingDown)
+      return;
+    if (dropBusy()) {
+      setStatus("Poczekaj: poprzednie kopiowanie do folderu jeszcze trwa.");
+      return;
+    }
+    if (!validLocalPath(folder) || !QFileInfo(folder).isDir())
+      return;
+    dropCancel->store(true);
+    auto token = std::make_shared<std::atomic_bool>(false);
+    dropCancel = token;
+    dropFolder = QFileInfo(folder).absoluteFilePath();
+    setStatus(QString("Sprawdzam pliki w folderze „%1”…").arg(dropFolderName()));
+    const QString target = dropFolder;
+    dropCheck.setFuture(QtConcurrent::run(&dropPool, [files, target, token] {
+      DropCheck result;
+      try {
+        result.items = FileOps::examineCopy(files, target, token);
+      } catch (const std::exception &e) {
+        result.error = QString::fromUtf8(e.what());
+        result.cancelled = token->load();
+      }
+      return result;
+    }));
+  }
+  // Step 2: names that already exist are never overwritten without an
+  // explicit answer.
+  void dropChecked() {
+    if (isShuttingDown)
+      return;
+    const auto result = dropCheck.result();
+    if (result.cancelled) {
+      setStatus("Kopiowanie anulowane. Nic nie zmieniono.");
+      return;
+    }
+    if (!result.error.isEmpty()) {
+      setStatus(Ui::tr("Nie skopiowano: %1").arg(Ui::tr(result.error)));
+      return;
+    }
+    // Only different files of the same name are a question: identical ones
+    // would not change, links, folders and special files are never touched.
+    int fresh = 0, existing = 0, blocked = 0;
+    dropSkipped.clear();
+    for (const auto &item : result.items) {
+      fresh += item.state == CopyItem::Fresh;
+      existing += item.state == CopyItem::Exists;
+      if (item.state == CopyItem::Blocked && blocked++ == 0)
+        dropSkipped = Ui::tr("%1 — pominięty: %2")
+                          .arg(QFileInfo(item.target).fileName(),
+                               Ui::tr(item.note));
+    }
+    if (blocked > 1)
+      dropSkipped += " " + Ui::tr(Ui::counted(blocked - 1, "…i jeszcze %1 plik",
+                                              "…i jeszcze %1 pliki",
+                                              "…i jeszcze %1 plików"));
+    if (existing)
+      askOverwrite(result.items, fresh, existing);
+    else if (fresh)
+      startDropCopy(result.items, false);
+    else
+      dropCopiedReport(FileOps::copyItems(result.items, false, dropCancel));
+  }
+  static QString fileStamp(qint64 size, qint64 modified) {
+    return QString("%1, %2").arg(
+        QLocale().formattedDataSize(size, 1),
+        QLocale().toString(QDateTime::fromMSecsSinceEpoch(modified),
+                           QLocale::ShortFormat));
+  }
+  void askOverwrite(const QList<CopyItem> &items, int fresh, int existing) {
+    const QString name = dropFolderName();
+    // Files that would change first, then the ones that stay as they are.
+    QStringList replaced, same, skipped;
+    for (const auto &item : items) {
+      const QString file = QFileInfo(item.target).fileName();
+      if (item.state == CopyItem::Exists)
+        replaced << Ui::tr("%1 — w folderze: %2; przeciągany: %3")
+                        .arg(file,
+                             fileStamp(item.targetSize, item.targetModified),
+                             fileStamp(item.sourceSize, item.sourceModified));
+      else if (item.state == CopyItem::Identical)
+        same << Ui::tr("%1 — identyczna zawartość, nic się nie zmieni").arg(file);
+      else if (item.state == CopyItem::Blocked)
+        skipped << Ui::tr("%1 — pominięty: %2").arg(file, Ui::tr(item.note));
+    }
+    const QStringList all = replaced + same + skipped;
+    QStringList lines = all.mid(0, 12);
+    const int hidden = int(all.size() - lines.size());
+    if (hidden)
+      lines.append(Ui::tr(Ui::counted(hidden, "…i jeszcze %1 plik",
+                                      "…i jeszcze %1 pliki",
+                                      "…i jeszcze %1 plików")));
+    const QString text =
+        existing == 1
+            ? QString("W folderze „%1” jest już plik o tej nazwie. Nadpisać "
+                      "go kopią? Bez Twojej zgody nic nie zostanie nadpisane.")
+                  .arg(name)
+            : Ui::counted(existing, // n ≥ 2: the first form is never used
+                          "W folderze „%2” są już %1 pliki o tych samych "
+                          "nazwach. Nadpisać je kopiami? Bez Twojej zgody nic "
+                          "nie zostanie nadpisane.",
+                          "W folderze „%2” są już %1 pliki o tych samych "
+                          "nazwach. Nadpisać je kopiami? Bez Twojej zgody nic "
+                          "nie zostanie nadpisane.",
+                          "W folderze „%2” jest już %1 plików o tych samych "
+                          "nazwach. Nadpisać je kopiami? Bez Twojej zgody nic "
+                          "nie zostanie nadpisane.")
+                  .arg(name);
+    const QString overwrite =
+        existing == 1 ? QString("&Nadpisz")
+                      : Ui::counted(existing, "&Nadpisz %1 pliki",
+                                    "&Nadpisz %1 pliki", "&Nadpisz %1 plików");
+    // Without new names "skip" would copy nothing: only cancel or overwrite.
+    const bool canSkip = fresh > 0;
+    const QStringList buttons =
+        canSkip ? QStringList{"&Anuluj", "&Pomiń istniejące", overwrite}
+                : QStringList{"&Anuluj", overwrite};
+    dropAsking = true;
+    Dialogs::message(
+        window, existing == 1 ? "Plik już istnieje" : "Pliki już istnieją",
+        text, lines.join('\n'), buttons, canSkip ? 1 : 0, 0,
+        [this, live = alive, items, canSkip](int choice) {
+          if (!*live)
+            return;
+          dropAsking = false;
+          if (isShuttingDown)
+            return;
+          const int overwriteButton = canSkip ? 2 : 1;
+          if (choice == overwriteButton)
+            startDropCopy(items, true);
+          else if (canSkip && choice == 1)
+            startDropCopy(items, false);
+          else
+            setStatus("Kopiowanie anulowane. Nic nie zmieniono.");
+        });
+  }
+  // Step 3: copy in the background (new names never replace anything;
+  // replacements are atomic and only of the files that were examined).
+  void startDropCopy(const QList<CopyItem> &items, bool overwrite) {
+    if (isShuttingDown || dropCheck.isRunning() || dropCopy.isRunning())
+      return;
+    dropCancel->store(true);
+    auto token = std::make_shared<std::atomic_bool>(false);
+    dropCancel = token;
+    const QString name = dropFolderName();
+    setStatus(QString("Kopiuję do „%1”…").arg(name));
+    auto report = [this, token, name](qint64 done, qint64 total) {
+      QMetaObject::invokeMethod(
+          this,
+          [this, token, name, done, total] {
+            if (token == dropCancel && !token->load() && !isShuttingDown &&
+                total > 0)
+              setStatus(QString("Kopiuję do „%1”: %2 / %3 MiB")
+                            .arg(name, QString::number(done / 1048576.0, 'f', 1),
+                                 QString::number(total / 1048576.0, 'f', 1)));
+          },
+          Qt::QueuedConnection);
+    };
+    dropCopy.setFuture(
+        QtConcurrent::run(&dropPool, [items, overwrite, token, report] {
+          return FileOps::copyItems(items, overwrite, token, report);
+        }));
+  }
+  void dropCopied() {
+    if (!isShuttingDown)
+      dropCopiedReport(dropCopy.result());
+  }
+  void dropCopiedReport(const CopyReport &r) {
+    QStringList parts;
+    if (r.copied)
+      parts << Ui::tr(Ui::counted(r.copied, "%1 nowy plik", "%1 nowe pliki",
+                                  "%1 nowych plików"));
+    if (r.replaced)
+      parts << Ui::tr(Ui::counted(r.replaced, "%1 nadpisany", "%1 nadpisane",
+                                  "%1 nadpisanych"));
+    if (r.unchanged)
+      parts << Ui::tr(Ui::counted(r.unchanged, "%1 bez zmian (ten sam plik)",
+                                  "%1 bez zmian (te same pliki)",
+                                  "%1 bez zmian (te same pliki)"));
+    if (r.skipped)
+      parts << Ui::tr(Ui::counted(r.skipped, "%1 pominięty", "%1 pominięte",
+                                  "%1 pominiętych"));
+    QString done =
+        parts.isEmpty() ? Ui::tr("nic nie zapisano") : parts.join(", ");
+    if (!dropSkipped.isEmpty())
+      done += " (" + dropSkipped + ")";
+    const QString name = dropFolderName();
+    if (r.cancelled)
+      setStatus(Ui::tr("Przerwano kopiowanie do „%1”. Wcześniej: %2.")
+                    .arg(name, done));
+    else if (!r.error.isEmpty())
+      setStatus(Ui::tr("Przerwano kopiowanie do „%1” na pliku %2: %3 "
+                       "Wcześniej: %4.")
+                    .arg(name, r.failedFile, Ui::tr(r.error), done));
+    else if (r.copied + r.replaced == 0)
+      setStatus(Ui::tr("Nic nie skopiowano do „%1”: %2.").arg(name, done));
+    else
+      setStatus(Ui::tr("Skopiowano do „%1”: %2.").arg(name, done));
+  }
   void beginShutdown() {
     if (isShuttingDown)
       return;
@@ -2116,6 +2430,11 @@ struct PrismWindow::Impl : QObject {
     clipboardWatcher.disconnect(this);
     exportCancel->store(true);
     exportWatcher.disconnect(this);
+    // A copy into a folder stops between two reads; its unfinished file is
+    // a hidden temporary that is removed, never a half-written photo.
+    dropCancel->store(true);
+    dropCheck.disconnect(this);
+    dropCopy.disconnect(this);
     if (printJob)
       printJob->cancel();
     if (photoMenu)
@@ -2174,6 +2493,7 @@ PrismWindow::~PrismWindow() {
   d->scanPool.waitForDone();
   d->clipboardPool.waitForDone();
   d->exportPool.waitForDone();
+  d->dropPool.waitForDone();
   if (d->photoMenu)
     gtk_widget_unparent(d->photoMenu);
   d->photoMenu = nullptr;
@@ -2278,6 +2598,27 @@ bool PrismWindow::bookmarkChecked() const {
   return gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(d->bookmarkStar));
 }
 bool PrismWindow::shuttingDown() const { return d->isShuttingDown; }
+QString PrismWindow::dropTargetAt(double x, double y, bool fromLibrary) const {
+  QString folder;
+  switch (d->dropSpot(x, y, fromLibrary, &folder)) {
+  case DropSpot::None:
+    return "none";
+  case DropSpot::Open:
+    return "open";
+  case DropSpot::Compare:
+    return "compare";
+  case DropSpot::Folder:
+    return "folder:" + folder;
+  }
+  return {};
+}
+bool PrismWindow::dropFiles(const QStringList &files, double x, double y,
+                            bool fromLibrary) {
+  return d->dropFiles(files, x, y, fromLibrary);
+}
+bool PrismWindow::copyingToFolder() const {
+  return d->dropCheck.isRunning() || d->dropCopy.isRunning();
+}
 void PrismWindow::showComparison(const QString &path) {
   d->showComparison(path);
 }

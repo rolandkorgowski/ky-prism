@@ -6,6 +6,9 @@
 // once; nothing is translated on paint or by a timer.
 namespace Ui {
 QString tr(const QString &source);
+// Polish plural forms with %1 = n: 1 plik, 2–4 pliki (but 12–14 plików),
+// 5+ plików. Each form is a separate catalogue entry.
+QString counted(int n, const char *one, const char *few, const char *many);
 // Qt-style "&Otwórz" accelerators → GTK "_Otwórz".
 QString mnemonic(const QString &translated);
 void text(GtkWidget *label, const QString &source);

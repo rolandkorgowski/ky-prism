@@ -27,6 +27,7 @@
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
+#include <sys/stat.h>
 #if defined(__GLIBC__)
 #include <malloc.h>
 #endif
@@ -116,6 +117,80 @@ void closeDialog(GtkWindow *dialog) {
   if (dialog)
     gtk_window_close(dialog);
   pump(120);
+}
+// Clicks the dialog button whose caption is `caption`.
+bool press(GtkWindow *dialog, const QString &caption) {
+  std::function<GtkWidget *(GtkWidget *)> find = [&](GtkWidget *w) -> GtkWidget * {
+    if (GTK_IS_BUTTON(w))
+      if (auto *label = findType(w, GTK_TYPE_LABEL);
+          label && QString::fromUtf8(gtk_label_get_text(GTK_LABEL(label))) == caption)
+        return w;
+    for (auto *c = gtk_widget_get_first_child(w); c; c = gtk_widget_get_next_sibling(c))
+      if (auto *found = find(c))
+        return found;
+    return nullptr;
+  };
+  auto *button = dialog ? find(GTK_WIDGET(dialog)) : nullptr;
+  if (button)
+    g_signal_emit_by_name(button, "clicked");
+  pump(150);
+  return button;
+}
+GtkEventController *controllerOf(GtkWidget *widget, GType type) {
+  GListModel *list = gtk_widget_observe_controllers(widget);
+  GtkEventController *found = nullptr;
+  for (guint i = 0; i < g_list_model_get_n_items(list) && !found; ++i) {
+    auto *controller = GTK_EVENT_CONTROLLER(g_list_model_get_item(list, i));
+    if (G_TYPE_CHECK_INSTANCE_TYPE(controller, type))
+      found = controller;
+    g_object_unref(controller);
+  }
+  g_object_unref(list);
+  return found;
+}
+QStringList filesOf(GdkContentProvider *provider) {
+  QStringList paths;
+  GValue value = G_VALUE_INIT;
+  g_value_init(&value, GDK_TYPE_FILE_LIST);
+  if (provider && gdk_content_provider_get_value(provider, &value, nullptr)) {
+    GSList *files =
+        gdk_file_list_get_files(static_cast<GdkFileList *>(g_value_get_boxed(&value)));
+    for (auto *l = files; l; l = l->next) {
+      g_autofree char *path = g_file_get_path(G_FILE(l->data));
+      if (path)
+        paths << QFile::decodeName(path);
+    }
+    g_slist_free(files);
+  }
+  g_value_unset(&value);
+  return paths;
+}
+// Centre of the library row/thumbnail of `path`, in the window content's
+// coordinates (the drop target's).
+bool dropPoint(PrismWindow &window, const QString &path, double *x, double *y) {
+  double vx = 0, vy = 0;
+  if (!window.library()->pointOf(path, &vx, &vy))
+    return false;
+  graphene_point_t in = GRAPHENE_POINT_INIT(float(vx), float(vy)), out;
+  if (!gtk_widget_compute_point(window.library()->focusWidget(),
+                                content(window.window()), &in, &out))
+    return false;
+  *x = out.x;
+  *y = out.y;
+  return true;
+}
+QByteArray bytesOf(const QString &path) {
+  QFile file(path);
+  return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+}
+ino_t inodeOf(const QString &path) {
+  struct stat s{};
+  return lstat(QFile::encodeName(path).constData(), &s) ? 0 : s.st_ino;
+}
+bool noTemporaries(const QString &folder) {
+  return QDir(folder)
+      .entryList({".prism-copy-*"}, QDir::Files | QDir::Hidden | QDir::System)
+      .isEmpty();
 }
 void solid(const QString &file, int w, int h, std::vector<double> rgb) {
   auto image = vips::VImage::black(w, h, vips::VImage::option()->set("bands", 3))
@@ -429,6 +504,182 @@ void scenario(const QString &photos, const QString &config,
   check(library->selectedFiles().size() == 2,
         "opening the pair keeps both files selected");
   window.trigger("compare");
+
+  // --- drag and drop: the library's drag source, the window's drop target ---
+  {
+    auto *area = content(gtkWindow);
+    const QString holiday = photos + "/Wakacje", green = photos + "/green.jpg",
+                  before = window.currentPhoto();
+    for (bool thumbnails : {false, true}) {
+      window.setLibraryMode(thumbnails);
+      pump(400);
+      double fx = 0, fy = 0, px = 0, py = 0, gx = 0, gy = 0;
+      waitFor(
+          [&] {
+            return library->pointOf(holiday, &fx, &fy) &&
+                   library->pointOf(red, &px, &py) &&
+                   library->pointOf(green, &gx, &gy);
+          },
+          "library rows on screen");
+      check(library->dragFiles(fx, fy).isEmpty(), "folders do not drag");
+      library->selectRows({});
+      check(library->dragFiles(px, py) == QStringList{red},
+            "an unselected photo drags alone");
+      library->selectRows({int(library->names().indexOf("red.jpg")),
+                           int(library->names().indexOf("green.jpg"))});
+      const auto group = library->dragFiles(gx, gy);
+      check(group.size() == 2 && group.first() == green && group.contains(red),
+            "a selected photo drags the whole selection, itself first");
+      // The view's real drag source: its prepare handler builds the content.
+      auto *source = controllerOf(library->focusWidget(), GTK_TYPE_DRAG_SOURCE);
+      check(source, "the view has a drag source");
+      check(gtk_drag_source_get_actions(GTK_DRAG_SOURCE(source)) == GDK_ACTION_COPY,
+            "other programs may only copy, never move");
+      GdkContentProvider *provider = nullptr;
+      g_signal_emit_by_name(source, "prepare", gx, gy, &provider);
+      check(filesOf(provider) == group, "the drag carries the file list");
+      GdkContentFormats *formats =
+          provider ? gdk_content_provider_ref_formats(provider) : nullptr;
+      formats = formats ? gdk_content_formats_union_serialize_mime_types(formats)
+                        : nullptr;
+      check(formats && gdk_content_formats_contain_mime_type(formats, "text/uri-list"),
+            "other programs get text/uri-list");
+      if (formats)
+        gdk_content_formats_unref(formats);
+      g_clear_object(&provider);
+      g_signal_emit_by_name(source, "prepare", fx, fy, &provider);
+      check(!provider, "no drag starts on a folder");
+      g_clear_object(&provider);
+      double rx = 0, ry = 0, ox = 0, oy = 0;
+      check(dropPoint(window, holiday, &rx, &ry) && dropPoint(window, red, &ox, &oy),
+            "rows map to the window");
+      check(window.dropTargetAt(rx, ry, true) == "folder:" + holiday,
+            "library drag onto a folder copies there");
+      check(window.dropTargetAt(ox, oy, true) == "none",
+            "library drag onto a photo row does nothing");
+      check(window.dropTargetAt(rx, ry, false) == "open",
+            "another program's drop on a folder row opens, as before");
+    }
+    window.setLibraryMode(false);
+    pump(300);
+
+    // Onto the photo: open. Onto the second photo: compare.
+    window.showComparison(photos + "/blue.png");
+    waitFor([&] { return second->imageSize() == QSize(320, 200) && !second->busy(); },
+            "comparison for the drop");
+    auto centre = [&](GtkWidget *widget, double *x, double *y) {
+      graphene_rect_t b;
+      check(gtk_widget_compute_bounds(widget, area, &b), "widget bounds");
+      *x = b.origin.x + b.size.width / 2;
+      *y = b.origin.y + b.size.height / 2;
+    };
+    double vx = 0, vy = 0, cx = 0, cy = 0;
+    centre(first->widget(), &vx, &vy);
+    centre(second->widget(), &cx, &cy);
+    check(window.dropTargetAt(vx, vy, true) == "open", "drop on the photo opens");
+    check(window.dropTargetAt(cx, cy, true) == "compare",
+          "drop on the second photo compares");
+    check(window.dropFiles({photos + "/IMG_2.jpg"}, cx, cy, true) &&
+              window.comparedPhoto().endsWith("IMG_2.jpg"),
+          "a dropped photo replaces the compared one");
+    waitFor([&] { return second->imageSize() == QSize(800, 600) && !second->busy(); },
+            "dropped comparison decoded");
+    // The window's real drop handler, as for a drop from a file manager.
+    auto *target = controllerOf(area, GTK_TYPE_DROP_TARGET);
+    check(target, "the window has a drop target");
+    GValue value = G_VALUE_INIT;
+    g_value_init(&value, GDK_TYPE_FILE_LIST);
+    GSList *one = g_slist_prepend(
+        nullptr, g_file_new_for_path(QFile::encodeName(photos + "/IMG_10.jpg").constData()));
+    g_value_take_boxed(&value, gdk_file_list_new_from_list(one));
+    g_slist_free_full(one, g_object_unref);
+    gboolean accepted = FALSE;
+    g_signal_emit_by_name(target, "drop", &value, vx, vy, &accepted);
+    g_value_unset(&value);
+    check(accepted && window.currentPhoto().endsWith("IMG_10.jpg"),
+          "a dropped file opens");
+    waitFor([&] { return !first->busy(); }, "dropped photo decoded");
+    window.trigger("compare");
+    // Status messages below are the copy's own: let the decodes report first.
+    waitFor(
+        [&] {
+          return !first->busy() && !second->busy() &&
+                 window.statusText().startsWith("Gotowe");
+        },
+        "views idle before copying");
+    pump(300);
+
+    // Onto a folder: new names are copied, nothing is ever overwritten
+    // without the question, and every answer keeps the files intact.
+    double rx = 0, ry = 0;
+    waitFor([&] { return dropPoint(window, holiday, &rx, &ry); }, "folder row");
+    check(window.dropFiles({red}, rx, ry, true), "drop onto the folder accepted");
+    waitFor(
+        [&] {
+          return !window.copyingToFolder() &&
+                 window.statusText() == "Skopiowano do „Wakacje”: 1 nowy plik.";
+        },
+        "copied into the folder");
+    check(bytesOf(holiday + "/red.jpg") == bytesOf(red), "the copy is byte-identical");
+    const auto copiedInode = inodeOf(holiday + "/red.jpg");
+    window.dropFiles({red}, rx, ry, true);
+    waitFor(
+        [&] {
+          return !window.copyingToFolder() &&
+                 window.statusText() ==
+                     "Nic nie skopiowano do „Wakacje”: 1 bez zmian (ten sam plik).";
+        },
+        "identical file reported");
+    check(!dialogOf(gtkWindow) && inodeOf(holiday + "/red.jpg") == copiedInode,
+          "an identical file is neither asked about nor rewritten");
+    solid(holiday + "/green.jpg", 64, 64, {1, 2, 3});
+    const QByteArray kept = bytesOf(holiday + "/green.jpg");
+    const auto keptInode = inodeOf(holiday + "/green.jpg");
+    const QStringList pair{green, photos + "/IMG_2.jpg"};
+    window.dropFiles(pair, rx, ry, true);
+    waitFor([&] { return dialogOf(gtkWindow) != nullptr; }, "overwrite question");
+    shot(GTK_WIDGET(dialogOf(gtkWindow)), "08b-overwrite-question");
+    check(press(dialogOf(gtkWindow), "Anuluj"), "cancel button");
+    waitFor([&] { return !dialogOf(gtkWindow); }, "question closed");
+    check(window.statusText() == "Kopiowanie anulowane. Nic nie zmieniono." &&
+              bytesOf(holiday + "/green.jpg") == kept &&
+              inodeOf(holiday + "/green.jpg") == keptInode &&
+              !QFileInfo::exists(holiday + "/IMG_2.jpg"),
+          "Anuluj changes nothing");
+    window.dropFiles(pair, rx, ry, true);
+    waitFor([&] { return dialogOf(gtkWindow) != nullptr; }, "question again");
+    check(press(dialogOf(gtkWindow), "Pomiń istniejące"), "skip button");
+    waitFor(
+        [&] {
+          return !window.copyingToFolder() &&
+                 window.statusText() ==
+                     "Skopiowano do „Wakacje”: 1 nowy plik, 1 pominięty.";
+        },
+        "skip copies only new names");
+    check(bytesOf(holiday + "/green.jpg") == kept &&
+              inodeOf(holiday + "/green.jpg") == keptInode &&
+              bytesOf(holiday + "/IMG_2.jpg") == bytesOf(photos + "/IMG_2.jpg"),
+          "Pomiń istniejące keeps the existing file");
+    window.dropFiles({green}, rx, ry, true);
+    waitFor([&] { return dialogOf(gtkWindow) != nullptr; }, "single question");
+    check(!press(dialogOf(gtkWindow), "Pomiń istniejące") &&
+              press(dialogOf(gtkWindow), "Nadpisz"),
+          "with no new names only cancel and overwrite are offered");
+    waitFor(
+        [&] {
+          return !window.copyingToFolder() &&
+                 window.statusText() == "Skopiowano do „Wakacje”: 1 nadpisany.";
+        },
+        "overwrite finished");
+    check(bytesOf(holiday + "/green.jpg") == bytesOf(green) && noTemporaries(holiday),
+          "Nadpisz replaces the file, no temporary file left");
+    for (const auto &name : {"red.jpg", "green.jpg", "IMG_2.jpg"})
+      QFile::remove(holiday + "/" + name);
+    window.open(before);
+    waitFor([&] { return !first->busy(); }, "photo restored after drops");
+    library->selectRows({int(library->names().indexOf("red.jpg")),
+                         int(library->names().indexOf("green.jpg"))});
+  }
 
   // --- bookmarks and favourites (isolated XDG_DATA_HOME) ---
   check(!window.bookmarkChecked(), "directory not bookmarked yet");
@@ -824,9 +1075,25 @@ void scenario(const QString &photos, const QString &config,
   }
   pump(100);
 
+  // --- close while the overwrite question is open: nothing is written ---
+  const QString askedFile = photos + "/Wakacje/red.jpg";
+  solid(askedFile, 32, 32, {9, 9, 9});
+  const QByteArray asked = bytesOf(askedFile);
+  {
+    double rx = 0, ry = 0;
+    window.setLibraryMode(false);
+    pump(300);
+    waitFor([&] { return dropPoint(window, photos + "/Wakacje", &rx, &ry); },
+            "folder row before closing");
+    window.dropFiles({photos + "/red.jpg"}, rx, ry, true);
+    waitFor([&] { return dialogOf(gtkWindow) != nullptr; }, "question before closing");
+  }
+
   // --- close while a decode is in flight ---
   window.open(photos + "/IMG_10.jpg");
   window.close();
+  check(bytesOf(askedFile) == asked && noTemporaries(photos + "/Wakacje"),
+        "closing while asking overwrites nothing");
   check(closedSeen && window.shuttingDown(), "close cancels work and reports");
   check(!window.trigger("open"), "no action runs after shutdown began");
 }
