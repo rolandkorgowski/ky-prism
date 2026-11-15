@@ -18,21 +18,50 @@ Potrzebny jest tylko Python 3. Resztę `./run.sh install` dobierze sam.
 | Ubuntu 24.04 / 26.04, Debian, Mint | `sudo apt install git python3` |
 | Arch, Omarchy, Manjaro, EndeavourOS | `sudo pacman -Syu --needed git python` |
 | Fedora | `sudo dnf install git python3` |
-| FreeBSD (jako root) | `pkg install -y git cmake pkgconf python3 qt6-base gtk4 libepoxy vips libraw lcms2 jpeg-turbo libglvnd mesa-libs desktop-file-utils xdg-utils` |
-| OpenBSD (jako root) | `pkg_add git cmake python%3 qt6-qtbase gtk+4 libvips libraw lcms2 jpeg desktop-file-utils xdg-utils` |
+| FreeBSD, OpenBSD | dwa warianty — niżej |
 
-**Po co root na BSD.** Na FreeBSD i OpenBSD pakiety systemowe może
-instalować tylko root. Sam ky-prism trafia na konto użytkownika (`~/.local`)
-i root nie jest do tego potrzebny. Gdy root zainstaluje od razu wszystkie
-pakiety z tabeli, `./run.sh install` nie prosi już o żadne uprawnienia.
+### FreeBSD i OpenBSD: po co root i dwa warianty
 
-**Wariant z uprawnieniami.** Root instaluje tylko `git` i Pythona, a resztę
-`./run.sh install` dobiera sam, pytając o hasło:
-- FreeBSD: `pkg install sudo`, potem w `visudo` odkomentuj
+**Root jest potrzebny wyłącznie do instalacji pakietów systemowych**: GTK,
+Qt, libvips, LibRaw, CMake i Python. Na BSD pakiety (`pkg`, `pkg_add`) może
+instalować tylko root. Wszystko inne skrypt robi na Twoim koncie i zapisuje
+tylko w Twoim katalogu domowym (`~/.local`): sprawdza źródła, kompiluje,
+uruchamia testy, instaluje program, wpis w menu i ikonę. Pakietów
+systemowych nie da się na BSD zainstalować bez roota — wybierasz tylko, kto
+wykona ten jeden krok.
+
+**Wariant A — skrypt sam instaluje pakiety (przez sudo/doas).** Raz, jako
+root:
+- FreeBSD: `pkg install -y git python3 sudo`, potem w `visudo` odkomentuj
   `%wheel ALL=(ALL:ALL) ALL`.
-- OpenBSD: **dopisz** regułę do `doas.conf`, nie nadpisuj pliku:
+- OpenBSD: `pkg_add git python%3`, potem **dopisz** regułę (istniejący plik
+  zostaje):
   `grep -qx 'permit persist :wheel' /etc/doas.conf || echo 'permit persist :wheel' >> /etc/doas.conf`.
-- Konto użytkownika musi należeć do grupy `wheel`.
+
+Potem jako zwykły użytkownik z grupy `wheel`: `git clone …`, `cd ky-prism`,
+`./run.sh install`. Skrypt sam doinstaluje brakujące pakiety, pytając
+o Twoje hasło.
+
+**Wariant B — bez roota w skrypcie.** Raz, jako root (Ty albo
+administrator), wszystkie pakiety naraz:
+- FreeBSD: `pkg install -y git cmake pkgconf python3 qt6-base gtk4 libepoxy vips libraw lcms2 jpeg-turbo libglvnd mesa-libs desktop-file-utils xdg-utils`
+- OpenBSD: `pkg_add git cmake python%3 qt6-qtbase gtk+4 libvips libraw lcms2 jpeg desktop-file-utils xdg-utils`
+
+Potem jako dowolny użytkownik, bez grupy `wheel`, sudo i doas:
+`git clone …`, `cd ky-prism`, `./run.sh install --bez-roota`. Skrypt nigdy
+nie wywoła sudo ani doas. Gdy jakiegoś pakietu brakuje, zatrzyma się
+i wypisze dokładne polecenie dla roota.
+
+**Różnice:**
+
+| | Wariant A | Wariant B |
+| --- | --- | --- |
+| Root robi raz | Git, Python, reguła sudo/doas | wszystkie pakiety |
+| Twoje konto | w grupie `wheel`, może używać sudo/doas | dowolne |
+| `./run.sh install` | doinstalowuje pakiety sam (pyta o hasło) | nigdy nie podnosi uprawnień |
+| Nowa wersja potrzebuje nowego pakietu | instaluje się automatycznie | skrypt wypisze polecenie dla roota |
+| Dla kogo | własny komputer | komputer współdzielony, konto bez uprawnień administratora |
+
 Program działa w sesji graficznej X11 albo Wayland z OpenGL.
 
 ## 2. Instalacja z GitHuba
@@ -42,6 +71,8 @@ git clone https://github.com/rolandkorgowski/ky-prism.git
 cd ky-prism
 ./run.sh install
 ```
+
+Na BSD w wariancie B: `./run.sh install --bez-roota`.
 
 `install` wykonuje po kolei:
 1. sprawdza sumy kontrolne źródeł,

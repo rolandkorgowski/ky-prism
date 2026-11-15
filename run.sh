@@ -5,10 +5,12 @@
 #   ./run.sh                     w rozpakowanej paczce (export, kopia programu):
 #                                ustawienia z paczki + instalacja (pyta przed zmianami);
 #                                w klonie git: ta pomoc
-#   ./run.sh install [--kompiluj]
+#   ./run.sh install [--kompiluj] [--bez-roota]
 #                                zależności z repozytoriów systemu (sudo/doas), kompilacja,
 #                                testy i instalacja do ~/.local; w paczce „na konto”
-#                                gotowy program bez kompilacji (--kompiluj wymusza)
+#                                gotowy program bez kompilacji (--kompiluj wymusza);
+#                                --bez-roota: nigdy sudo/doas — brakujące pakiety
+#                                wypisuje jako polecenie dla roota
 #   ./run.sh build | test        kompilacja / kompilacja i wszystkie testy
 #   ./run.sh run [ZDJĘCIE]       uruchom zbudowany program
 #   ./run.sh backup [--ustawienia|--program]
@@ -107,9 +109,11 @@ case "$action" in
         need_python "$action"
         shift
         compile=0
+        noroot=""
         for a in "$@"; do
             case "$a" in
                 --kompiluj|--compile) compile=1 ;;
+                --bez-roota|--no-root) noroot=--bez-roota ;;
                 *) die "Nieznana opcja $action: $a" ;;
             esac
         done
@@ -121,7 +125,7 @@ case "$action" in
             exec python3 -B "$root/package.py" install --prebuilt
         fi
         python3 -B "$root/i18n/generate.py" --check
-        if [ "$action" = install ]; then python3 -B "$root/dependencies.py" install
+        if [ "$action" = install ]; then python3 -B "$root/dependencies.py" install $noroot
         else python3 -B "$root/dependencies.py" check; fi
         configure_and_build "$action"
         [ "$action" = build ] && exit 0

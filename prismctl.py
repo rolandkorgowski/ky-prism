@@ -280,12 +280,19 @@ def install_text(archive_name, folder, prebuilt):
        sudo pacman -S --needed python
    Fedora:
        sudo dnf install python3
-   FreeBSD 14 / 15 i OpenBSD 7.6+: pakiety instaluje tylko root, ky-prism
-   trafia potem na konto użytkownika bez roota. Jako root, wszystko naraz:
-     FreeBSD:  pkg install -y git cmake pkgconf python3 qt6-base gtk4 libepoxy vips libraw lcms2 jpeg-turbo libglvnd mesa-libs desktop-file-utils xdg-utils
-     OpenBSD:  pkg_add git cmake python%3 qt6-qtbase gtk+4 libvips libraw lcms2 jpeg desktop-file-utils xdg-utils
-   (Albo tylko git i Pythona, a resztę dobierze ./run.sh install przez sudo/doas;
-   wtedy konto w grupie wheel. Regułę doas dopisz do /etc/doas.conf, nie nadpisuj.)
+   FreeBSD 14 / 15 i OpenBSD 7.6+: root jest potrzebny tylko do pakietów
+   systemowych (na BSD instaluje je wyłącznie root). Kompilacja, testy
+   i instalacja ky-prism odbywają się na Twoim koncie, w ~/.local. Wybierz:
+     A) skrypt instaluje pakiety sam przez sudo/doas — root raz:
+          FreeBSD: pkg install -y python3 sudo   (visudo: %wheel ALL=(ALL:ALL) ALL)
+          OpenBSD: pkg_add python%3
+                   grep -qx 'permit persist :wheel' /etc/doas.conf || echo 'permit persist :wheel' >> /etc/doas.conf
+        potem jako użytkownik z grupy wheel:  ./run.sh
+     B) bez roota w skrypcie — root raz instaluje wszystkie pakiety:
+          FreeBSD: pkg install -y git cmake pkgconf python3 qt6-base gtk4 libepoxy vips libraw lcms2 jpeg-turbo libglvnd mesa-libs desktop-file-utils xdg-utils
+          OpenBSD: pkg_add git cmake python%3 qt6-qtbase gtk+4 libvips libraw lcms2 jpeg desktop-file-utils xdg-utils
+        potem jako dowolny użytkownik:  ./run.sh import && ./run.sh install --bez-roota
+   Szczegóły i różnice: docs/INSTALACJA.md
 
 2. Rozpakuj i zainstaluj (jako zwykły użytkownik):
 

@@ -168,6 +168,18 @@ class NewIntegration(unittest.TestCase):
     command=module.plan();self.assertEqual(command[0],expected)
     self.assertNotIn('udisks2',command)
     self.assertNotIn('lsblk',module.tools(module.family()))
+ def test_install_without_root_never_elevates(self):
+  from unittest.mock import patch
+  import io,contextlib
+  spec=importlib.util.spec_from_file_location('prism_deps_noroot',ROOT/'dependencies.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+  out=io.StringIO()
+  with patch.object(module,'family',return_value='openbsd'),patch.object(module,'missing',return_value=['gtk4']),\
+       patch.object(module.os,'geteuid',return_value=1000),patch.object(module.subprocess,'run') as run,\
+       patch.object(sys,'argv',['dependencies.py','install','--bez-roota']),contextlib.redirect_stdout(out):
+   with self.assertRaises(SystemExit) as stop:module.main()
+  self.assertEqual(stop.exception.code,3)
+  run.assert_not_called()
+  self.assertIn("pkg_add",out.getvalue());self.assertNotIn('doas pkg_add',out.getvalue())
  def test_chrome_helper_uses_arguments_without_shell(self):
   import time
   with tempfile.TemporaryDirectory() as tmp:

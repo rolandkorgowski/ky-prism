@@ -57,11 +57,47 @@ a Hyprland window rule.
 
 ### FreeBSD and OpenBSD
 
-Root is needed only once, to install the system packages: on BSD only root
-may install them. ky-prism itself is installed under your own account, in
-`~/.local`, without root.
+**What root is for.** Root is used for exactly one thing: installing system
+packages (GTK, Qt, libvips, LibRaw, CMake, Python). On BSD only root may
+install packages (`pkg`, `pkg_add`). Everything else (checking sources,
+compiling, tests and installing ky-prism with its menu entry and icon)
+runs as your user and writes only to your home directory (`~/.local`).
+Installing system packages without root is not possible on BSD, so pick
+who runs the package step:
 
-As root, install everything at once:
+**Option A: the script installs packages (sudo/doas).** As root, once:
+
+FreeBSD:
+
+```sh
+pkg install -y git python3 sudo
+```
+
+Then run `visudo` and uncomment `%wheel ALL=(ALL:ALL) ALL`.
+
+OpenBSD (the rule is appended, an existing `/etc/doas.conf` is kept):
+
+```sh
+pkg_add git python%3
+```
+
+```sh
+grep -qx 'permit persist :wheel' /etc/doas.conf || echo 'permit persist :wheel' >> /etc/doas.conf
+```
+
+Then as your user (in the `wheel` group):
+
+```sh
+git clone https://github.com/rolandkorgowski/ky-prism.git
+cd ky-prism
+./run.sh install
+```
+
+`./run.sh install` installs the missing packages through `sudo`/`doas`,
+asking for your password.
+
+**Option B: no root in the script.** As root (you or the administrator),
+once, install every package:
 
 FreeBSD:
 
@@ -75,21 +111,26 @@ OpenBSD:
 pkg_add git cmake python%3 qt6-qtbase gtk+4 libvips libraw lcms2 jpeg desktop-file-utils xdg-utils
 ```
 
-Then as your user:
+Then as your user (no `wheel`, sudo or doas needed):
 
 ```sh
 git clone https://github.com/rolandkorgowski/ky-prism.git
 cd ky-prism
-./run.sh install
+./run.sh install --bez-roota
 ```
 
-With all packages present, `./run.sh install` needs no root at all.
-Alternatively, install only Git and Python as root and let
-`./run.sh install` fetch the rest. It then asks for your password through
-`sudo` (FreeBSD: `pkg install sudo`, then with `visudo` uncomment
-`%wheel ALL=(ALL:ALL) ALL`) or `doas` (OpenBSD: append, do not overwrite,
-`permit persist :wheel` to `/etc/doas.conf`). Your account must be in the
-`wheel` group.
+`--bez-roota` never calls `sudo` or `doas`. If a package is missing, it
+stops and prints the exact command for root.
+
+**How they differ.**
+
+| | Option A | Option B |
+| --- | --- | --- |
+| Root once | Git, Python, sudo/doas rule | all packages |
+| Your account | in `wheel`, may use sudo/doas | any account |
+| `./run.sh install` | installs missing packages itself (asks for your password) | never elevates |
+| A later version needs a new package | installed automatically | the script prints the command for root |
+| Good for | your own computer | shared computers, accounts without admin rights |
 
 On FreeBSD and OpenBSD, if the `ky-prism` command is not found in a
 terminal, add `export PATH="$HOME/.local/bin:$PATH"` to `~/.profile`. The
@@ -205,6 +246,11 @@ program under `F1`.
 3. Uruchom **ky-prism** z menu aplikacji albo poleceniem `ky-prism`.
 
 Aktualizacja: `cd ky-prism && git pull && ./run.sh install`.
+
+FreeBSD i OpenBSD: root jest potrzebny tylko do instalacji pakietów
+systemowych. Dwa warianty (skrypt instaluje pakiety przez sudo/doas albo
+`./run.sh install --bez-roota` bez żadnego roota w skrypcie) opisuje
+[docs/INSTALACJA.md](docs/INSTALACJA.md).
 
 ## For developers
 

@@ -115,6 +115,8 @@ def privilege():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('action', choices=['check', 'install', 'plan'], default='check', nargs='?')
+    # Never elevate: missing packages are reported with the command for root.
+    parser.add_argument('--bez-roota', '--no-root', dest='no_root', action='store_true')
     args = parser.parse_args()
     kind = family()
     needed = missing(kind)
@@ -126,7 +128,12 @@ def main():
         return
     command = plan(kind)
     print('Brakuje: ' + ', '.join(needed))
-    shown = (['sudo'] if kind not in ('freebsd', 'openbsd') else ['doas']) if os.geteuid() else []
+    if args.no_root and os.geteuid():
+        print('Tryb bez roota: skrypt nie instaluje pakietów systemowych i nie używa sudo/doas.')
+        print('Niech root (Ty jako root albo administrator) wykona raz: ' + shlex.join(command))
+        print('Potem ponów: ./run.sh install --bez-roota')
+        sys.exit(3)
+    shown = (['doas'] if kind == 'openbsd' else ['sudo']) if os.geteuid() else []
     print('Pakiety systemu: ' + shlex.join([*shown, *command]))
     if args.action == 'plan':
         return
