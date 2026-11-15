@@ -18,7 +18,9 @@ class Transfer(unittest.TestCase):
         self.home = base / 'home'
         self.backups = base / 'backups'
         self.env = dict(os.environ, HOME=str(self.home), PRISM_BACKUP_DIR=str(self.backups))
-        for key in ('XDG_DATA_HOME', 'XDG_CONFIG_HOME', 'HYPRLAND_INSTANCE_SIGNATURE'):
+        # Snap terminals export XDG_*_HOME pointing into the real home.
+        for key in ('XDG_DATA_HOME', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME',
+                    'HYPRLAND_INSTANCE_SIGNATURE'):
             self.env.pop(key, None)
         self.data = self.home / '.local/share/omarchy-prism'
         self.config = self.home / '.config/ky-prism'

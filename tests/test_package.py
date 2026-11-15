@@ -9,11 +9,19 @@ import tarfile
 import tempfile
 import unittest
 ROOT=Path(__file__).resolve().parents[1]
+def isolated(home,**extra):
+ """Environment of a throw-away account. Snap terminals (e.g. Alacritty) export
+ XDG_*_HOME as absolute paths into the real home: a new HOME alone would still
+ read and write the user's own ky-prism settings."""
+ env=dict(os.environ)
+ for key in ('XDG_DATA_HOME','XDG_CONFIG_HOME','XDG_CACHE_HOME','XDG_STATE_HOME','HYPRLAND_INSTANCE_SIGNATURE'):env.pop(key,None)
+ env['HOME']=str(home);env.update(extra)
+ return env
 class Packaging(unittest.TestCase):
  def test_install_verify_export_and_backup(self):
   with tempfile.TemporaryDirectory() as tmp:
    home=Path(tmp)/'account with space';home.mkdir();dest=Path(tmp)/'packages'
-   env=dict(os.environ,HOME=str(home));env.pop('HYPRLAND_INSTANCE_SIGNATURE',None)
+   env=isolated(home)
    config=home/'.config/hypr/hyprland.lua';config.parent.mkdir(parents=True);config.write_text('-- existing\n')
    mime=home/'.config/mimeapps.list';mime.write_text('[Default Applications]\nimage/jpeg=existing-viewer.desktop;\ntext/plain=editor.desktop;\n[Added Associations]\nimage/jpeg=other.desktop;omarchy-prism.desktop;\n[Removed Associations]\nimage/jpeg=blocked.desktop;omarchy-prism.desktop;ky-prism.desktop;\n')
    def run(*args,good=True):
@@ -87,7 +95,7 @@ class Packaging(unittest.TestCase):
     command=bin_dir/'hyprctl'
     command.write_text('#!/usr/bin/env python3\nimport os,sys\nif sys.argv[1:]==["-j","configerrors"]:print(os.environ["PRISM_TEST_RESPONSE"])\n')
     command.chmod(0o755)
-    env=dict(os.environ,HOME=str(home),PATH=str(bin_dir)+os.pathsep+os.environ['PATH'],HYPRLAND_INSTANCE_SIGNATURE='prism-test',PRISM_TEST_RESPONSE=response)
+    env=isolated(home,PATH=str(bin_dir)+os.pathsep+os.environ['PATH'],HYPRLAND_INSTANCE_SIGNATURE='prism-test',PRISM_TEST_RESPONSE=response)
     result=subprocess.run(['python3','-B',str(ROOT/'package.py'),'install'],env=env,capture_output=True,text=True)
     self.assertEqual(result.returncode==0,success,result.stderr)
     launcher=home/'.local/bin/omarchy-prism'
