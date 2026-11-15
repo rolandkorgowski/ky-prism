@@ -62,7 +62,33 @@ Testy:
   przeciągania, cele na liście i miniaturach, porównanie, wszystkie trzy
   odpowiedzi oraz zamknięcie okna w trakcie pytania.
 
-Samego ruchu myszą testy nie symulują. Trzeba go sprawdzić ręcznie.
+**Sprawdzenie na FreeBSD 15.1 i OpenBSD 8.0** (maszyny wirtualne, X11 na
+Xvfb). Repo sklonowane, potem `./run.sh install`: pakiety, kompilacja,
+14 testów C++ (w tym `file_copy`) i testy Python przechodzą. Potem test
+okna `gtk_ui` i nowy tryb `prism-gtk-test --xdotool-drag`: prawdziwe
+zdarzenia myszy (XTest) przez xdotool. Sprawdza on:
+
+- kliknięcie otwiera zdjęcie,
+- przeciągnięcie wiersza listy i miniatury na folder kopiuje plik,
+- upuszczenie na wiersz zdjęcia niczego nie robi i nie otwiera
+  przeciąganego zdjęcia,
+- grupa zaznaczona przez Ctrl+klik przeciąga się razem i wywołuje pytanie,
+- upuszczenie na zdjęcie je otwiera.
+
+Na obu systemach wszystko przechodzi. Tryb `--xdotool-drag` przesuwa
+wskaźnik ekranu, na którym działa, dlatego nie jest w ctest: uruchamia się
+go tylko na Xvfb w maszynie testowej. Na Omarchy (Hyprland, Wayland) ruchu
+myszą nie symulowano.
+
+Na OpenBSD Qt zgłasza przy końcu wątków libvips ostrzeżenie GLib
+`g_main_context_pop_thread_default` (destruktor `QEventDispatcherGlib` dla
+obcego wątku). To ostrzeżenie Qt, nieszkodliwe i niezwiązane z kopiowaniem.
+
+**Sortowanie naturalne niezależne od locale.** Na BSD bez ustawionego `LANG`
+(locale „C”, `C.UTF-8`) `QCollator` pomija tryb liczbowy, więc lista
+pokazywała IMG_10 przed IMG_2. Gdy collator porównuje „2” i „10” błędnie,
+biblioteka dopełnia każdy ciąg cyfr zerami do 20 znaków przed kluczem
+sortowania. Wykryte testem `gtk_ui` w maszynach BSD, tam też sprawdzone.
 
 ## 0.13.0 — ostre piksele przy powiększeniu
 

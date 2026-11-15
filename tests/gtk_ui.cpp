@@ -178,7 +178,7 @@ bool dropPoint(PrismWindow &window, const QString &path, double *x, double *y) {
   double vx = 0, vy = 0;
   if (!window.library()->pointOf(path, &vx, &vy))
     return false;
-  graphene_point_t in = GRAPHENE_POINT_INIT(float(vx), float(vy)), out;
+  graphene_point_t in = Gx::point(float(vx), float(vy)), out;
   if (!gtk_widget_compute_point(window.library()->focusWidget(),
                                 content(window.window()), &in, &out))
     return false;
@@ -1301,7 +1301,14 @@ int xdotoolDrag(const QString &photos) {
   pump(500);
   window.browse(photos);
   auto *library = window.library();
-  waitFor([&] { return !library->scanning() && library->count() == 5; }, "listed");
+  try {
+    waitFor([&] { return !library->scanning() && library->count() == 6; }, "listed");
+  } catch (const std::exception &) {
+    std::cerr << "listed: scanning=" << library->scanning() << " dir="
+              << window.currentDirectory().toStdString() << " names="
+              << library->names().join('|').toStdString() << "\n";
+    throw;
+  }
   window.setLibraryMode(false);
   pump(500);
   const QString target = photos + "/Cel", red = photos + "/red.jpg",
@@ -1309,7 +1316,7 @@ int xdotoolDrag(const QString &photos) {
   auto spot = [&](const QString &path) {
     double rx = 0, ry = 0, sx = 0, sy = 0;
     waitFor([&] { return dropPoint(window, path, &rx, &ry); }, "row on screen");
-    graphene_point_t in = GRAPHENE_POINT_INIT(float(rx), float(ry)), out;
+    graphene_point_t in = Gx::point(float(rx), float(ry)), out;
     check(gtk_widget_compute_point(content(gtkWindow), GTK_WIDGET(gtkWindow), &in, &out),
           "row maps to the window");
     gtk_native_get_surface_transform(GTK_NATIVE(gtkWindow), &sx, &sy);

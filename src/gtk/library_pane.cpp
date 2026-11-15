@@ -39,6 +39,32 @@ struct ScanResult {
   QString directory;
   std::vector<std::shared_ptr<Entry>> entries;
 };
+// Natural order ("IMG_2" before "IMG_10") whatever the locale. Qt's collator
+// ignores numeric mode in the C locale (the BSD default when LANG is not
+// set); then every run of digits is zero-padded before collation.
+QString naturalText(const QString &name, bool pad) {
+  if (!pad)
+    return name;
+  QString out;
+  out.reserve(name.size() + 24);
+  for (qsizetype i = 0; i < name.size();) {
+    const auto digit = [&](qsizetype at) {
+      return name.at(at) >= QLatin1Char('0') && name.at(at) <= QLatin1Char('9');
+    };
+    if (!digit(i)) {
+      out += name.at(i++);
+      continue;
+    }
+    qsizetype end = i;
+    while (end < name.size() && digit(end))
+      ++end;
+    if (end - i < 20)
+      out += QString(20 - (end - i), QLatin1Char('0'));
+    out += QStringView(name).mid(i, end - i);
+    i = end;
+  }
+  return out;
+}
 const QSet<QString> &photoTypes() {
   static const QSet<QString> types{
       "jpg", "jpeg", "tif", "tiff", "png", "raw", "cr2", "cr3",
@@ -196,6 +222,7 @@ struct LibraryPane::Impl : QObject {
       QCollator collator;
       collator.setNumericMode(true);
       collator.setCaseSensitivity(Qt::CaseInsensitive);
+      const bool pad = collator.compare(QStringLiteral("2"), QStringLiteral("10")) > 0;
       QDirIterator it(dir, QDir::AllDirs | QDir::Files | QDir::NoDotAndDotDot);
       int count = 0;
       while (it.hasNext() && !token->load() && count < 50000) {
@@ -210,7 +237,7 @@ struct LibraryPane::Impl : QObject {
             info.fileName(), info.absoluteFilePath(), isDir,
             isDir ? 0 : info.size(), info.lastModified().toMSecsSinceEpoch(),
             birth.isValid() ? birth.toMSecsSinceEpoch() : -1,
-            collator.sortKey(info.fileName())));
+            collator.sortKey(naturalText(info.fileName(), pad))));
         ++count;
       }
       return result;
