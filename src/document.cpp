@@ -165,6 +165,46 @@ static VImage imageFromPixels(const QImage &pixels) {
   return VImage(image).copy(
       VImage::option()->set("interpretation", VIPS_INTERPRETATION_RGB16));
 }
+QSize Document::size() const {
+  return original.get_image() ? QSize(original.width(), original.height())
+                              : QSize();
+}
+QImage Document::renderForPrint(QSize pixels, bool grayscale) {
+  if (!original.get_image())
+    fail("Brak otwartego zdjęcia.");
+  VImage image = original;
+  if (!pixels.isEmpty() &&
+      (pixels.width() < image.width() || pixels.height() < image.height())) {
+    const double scale = std::min(double(pixels.width()) / image.width(),
+                                  double(pixels.height()) / image.height());
+    image = image.resize(scale,
+                         VImage::option()->set("kernel", VIPS_KERNEL_LANCZOS3));
+  }
+  image = (image / 257.0).rint().cast(VIPS_FORMAT_UCHAR);
+  image = image.copy(
+      VImage::option()->set("interpretation", VIPS_INTERPRETATION_sRGB));
+  // Paper is white: transparent areas print as paper.
+  image = alpha ? image.flatten(VImage::option()->set(
+                      "background", std::vector<double>{255, 255, 255}))
+                : image.extract_band(0, VImage::option()->set("n", 3));
+  if (grayscale)
+    image = image.colourspace(VIPS_INTERPRETATION_B_W);
+  image = image.cast(VIPS_FORMAT_UCHAR);
+  killOnCancel(image, cancellation);
+  size_t bytes = 0;
+  void *data = image.write_to_memory(&bytes);
+  if (cancellation && cancellation->load()) {
+    g_free(data);
+    fail("Anulowano");
+  }
+  const bool grey = image.bands() == 1;
+  QImage result(static_cast<const uchar *>(data), image.width(), image.height(),
+                image.width() * image.bands(),
+                grey ? QImage::Format_Grayscale8 : QImage::Format_RGB888);
+  QImage owned = result.convertToFormat(QImage::Format_RGB32);
+  g_free(data);
+  return owned;
+}
 QByteArray Document::encodePng(qint64 maxPixels, QSize *encoded) {
   if (!original.get_image())
     fail("Brak otwartego zdjęcia.");
@@ -394,6 +434,8 @@ Info Document::open(const QString &path, const QString &profile,
   if (cancel->load())
     fail("Anulowano");
   alpha = source.has_alpha();
+  // libvips stores resolution in pixels per millimetre.
+  dpi = source.xres() > 0 ? source.xres() * 25.4 : 0;
   source = displayImage(source, profile, note);
   original = source;
   levels.emplace(0, original);

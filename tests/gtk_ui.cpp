@@ -12,6 +12,7 @@
 #include "library_pane.h"
 #include "nvjpeg_backend.h"
 #include "photo_view.h"
+#include "print_layout.h"
 #include "settings.h"
 #include "theme.h"
 #include "window.h"
@@ -21,6 +22,7 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
 #include <QTemporaryDir>
 #include <cmath>
 #include <iostream>
@@ -29,6 +31,7 @@
 #include <malloc.h>
 #endif
 #include <vips/vips8>
+#include <zlib.h>
 
 namespace {
 QString shots;
@@ -240,9 +243,16 @@ void scenario(const QString &photos, const QString &config,
   // --- interface opacity never touches the photograph ---
   const int originalOpacity = Theme::opacity();
   auto *root = content(gtkWindow);
+  // Chrome background alpha: the least opaque pixel along the header row
+  // (text and buttons are more opaque; the background is always there).
   auto chromeAlpha = [&] {
     const auto image = render(root);
-    return image.isNull() ? -1 : qAlpha(image.pixel(image.width() / 2, 12));
+    if (image.isNull())
+      return -1;
+    int least = 255;
+    for (int x = image.width() / 4; x < image.width() * 3 / 4; ++x)
+      least = std::min(least, qAlpha(image.pixel(x, 12)));
+    return least;
   };
   auto photoPixel = [&] {
     const auto image = render(first->widget());
@@ -505,6 +515,158 @@ void scenario(const QString &photos, const QString &config,
     check(gtk_widget_get_visible(menu), "Menu key / Shift+F10 open the menu");
     gtk_popover_popdown(GTK_POPOVER(menu));
     pump(150);
+  }
+
+  // --- printing: the same pages the printer gets, written as PDF ---
+  {
+    auto pdfPages = [](const QString &file) {
+      QFile pdf(file);
+      if (!pdf.open(QIODevice::ReadOnly))
+        return -1;
+      // Cairo writes PDF 1.7 with compressed object streams: inflate every
+      // stream, then count "/Type /Page" objects ("/Pages" is the tree).
+      const QByteArray bytes = pdf.readAll();
+      QByteArray text = bytes;
+      for (qsizetype at = bytes.indexOf("stream"); at >= 0; at = bytes.indexOf("stream", at + 6)) {
+        if (at >= 3 && bytes.mid(at - 3, 3) == "end")
+          continue;
+        qsizetype begin = at + 6;
+        while (begin < bytes.size() && (bytes[begin] == '\r' || bytes[begin] == '\n'))
+          ++begin;
+        const qsizetype stop = bytes.indexOf("endstream", begin);
+        if (stop < 0)
+          break;
+        z_stream z{};
+        if (inflateInit(&z) != Z_OK)
+          continue;
+        z.next_in = reinterpret_cast<Bytef *>(const_cast<char *>(bytes.constData() + begin));
+        z.avail_in = uInt(stop - begin);
+        char chunk[65536];
+        int rc = Z_OK;
+        while (rc == Z_OK) {
+          z.next_out = reinterpret_cast<Bytef *>(chunk);
+          z.avail_out = sizeof chunk;
+          rc = inflate(&z, Z_NO_FLUSH);
+          text.append(chunk, qsizetype(sizeof chunk - z.avail_out));
+        }
+        inflateEnd(&z);
+      }
+      auto it = QRegularExpression("/Type\\s*/Page[^s]").globalMatch(QString::fromLatin1(text));
+      int pages = 0;
+      for (; it.hasNext(); it.next())
+        ++pages;
+      return pages;
+    };
+    const QString redPath = photos + "/red.jpg";
+    window.open(redPath);
+    waitFor([&] { return window.currentPhoto() == redPath && !first->busy(); }, "photo for printing");
+    library->selectRows({});
+    PrintOptions options;
+    const QString single = work + "/druk-1.pdf";
+    check(window.printToPdf(single, options), "print job starts");
+    waitFor([&] { return !window.printing(); }, "single photo printed", 60000);
+    check(window.statusText() == "Zapisano PDF: 1 strona" && pdfPages(single) == 1,
+          "one photo, one page");
+    // One photo four times on a sheet, greyscale, with captions.
+    options.perPage = 4;
+    options.grayscale = true;
+    options.caption = true;
+    const QString sheet = work + "/druk-4.pdf";
+    check(window.printToPdf(sheet, options), "sheet job starts");
+    waitFor([&] { return !window.printing(); }, "sheet printed", 60000);
+    check(pdfPages(sheet) == 1, "repeated photo stays on one sheet");
+    // Five selected photos, four per sheet: two pages.
+    QList<int> rows;
+    const auto names = library->names();
+    for (const char *name : {"IMG_2.jpg", "IMG_10.jpg", "blue.png", "green.jpg", "red.jpg"})
+      rows.append(int(names.indexOf(QString(name))));
+    library->selectRows(rows);
+    pump(100);
+    const QString several = work + "/druk-5.pdf";
+    options.grayscale = false;
+    options.size = PrintOptions::Fixed;
+    options.widthMm = 90;
+    options.heightMm = 130;
+    check(window.printToPdf(several, options), "selection job starts");
+    waitFor([&] { return !window.printing(); }, "selection printed", 60000);
+    check(window.statusText() == "Zapisano PDF: 2 strony" && pdfPages(several) == 2,
+          "five photos, four per sheet: two pages");
+    library->selectRows({});
+    // PRISM_PRINT_PDF_DIR keeps the PDFs for a visual check.
+    if (const auto keep = qEnvironmentVariable("PRISM_PRINT_PDF_DIR"); !keep.isEmpty())
+      for (const auto &file : {single, sheet, several})
+        QFile::copy(file, keep + "/" + QFileInfo(file).fileName());
+    // The system dialog with the "Zdjęcie" tab.
+    check(window.trigger("print"), "print action");
+    GtkWindow *dialog = nullptr;
+    waitFor([&] {
+      GList *all = gtk_window_list_toplevels();
+      for (GList *l = all; l; l = l->next)
+        if (QString(G_OBJECT_TYPE_NAME(l->data)) == "GtkPrintUnixDialog" &&
+            gtk_widget_get_visible(GTK_WIDGET(l->data)))
+          dialog = GTK_WINDOW(l->data);
+      g_list_free(all);
+      return dialog != nullptr;
+    }, "print dialog shown", 20000);
+    bool photoTab = false;
+    if (auto *tabs = findType(GTK_WIDGET(dialog), GTK_TYPE_NOTEBOOK)) {
+      for (int i = 0; i < gtk_notebook_get_n_pages(GTK_NOTEBOOK(tabs)); ++i) {
+        auto *page = gtk_notebook_get_nth_page(GTK_NOTEBOOK(tabs), i);
+        auto *label = gtk_notebook_get_tab_label(GTK_NOTEBOOK(tabs), page);
+        if (label && GTK_IS_LABEL(label) &&
+            QString::fromUtf8(gtk_label_get_text(GTK_LABEL(label))) == "Zdjęcie") {
+          gtk_notebook_set_current_page(GTK_NOTEBOOK(tabs), i);
+          photoTab = true;
+        }
+      }
+      pump(2000); // previews are decoded off the main thread
+    }
+    check(photoTab, "print dialog has the \"Zdjęcie\" tab");
+    shot(GTK_WIDGET(dialog), "20-print-dialog");
+    gtk_window_close(dialog);
+    waitFor([&] { return !window.printing(); }, "print dialog closed", 20000);
+    check(window.statusText() == "Drukowanie anulowane.", "closing the dialog cancels");
+    // "Print to File" through the dialog: the real job path (GtkPrintJob),
+    // without paper. Saved settings preselect the printer and the file.
+    {
+      const QString printed = work + "/przez-okno.pdf";
+      QDir().mkpath(config + "/ky-prism");
+      QFile ini(config + "/ky-prism/print.ini");
+      check(ini.open(QIODevice::WriteOnly), "print settings fixture");
+      // GTK names its file printer in the session language.
+      const QString fileprinter = QString::fromUtf8(g_dgettext("gtk40", "Print to File"));
+      ini.write(QString("[Print Settings]\nprinter=%1\noutput-file-format=pdf\n"
+                        "output-uri=file://%2\nky-prism-per-page=2\n")
+                    .arg(fileprinter, printed)
+                    .toUtf8());
+      ini.close();
+      check(window.trigger("print"), "print action for a file");
+      GtkWidget *printButton = nullptr;
+      dialog = nullptr;
+      waitFor([&] {
+        GList *all = gtk_window_list_toplevels();
+        for (GList *l = all; l; l = l->next)
+          if (QString(G_OBJECT_TYPE_NAME(l->data)) == "GtkPrintUnixDialog" &&
+              gtk_widget_get_visible(GTK_WIDGET(l->data)))
+            dialog = GTK_WINDOW(l->data);
+        g_list_free(all);
+        if (!dialog)
+          return false;
+        G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+        printButton = gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK);
+        G_GNUC_END_IGNORE_DEPRECATIONS
+        return printButton && gtk_widget_get_sensitive(printButton);
+      }, "Print to File selected", 30000);
+      G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+      gtk_dialog_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK);
+      G_GNUC_END_IGNORE_DEPRECATIONS
+      waitFor([&] { return !window.printing(); }, "job sent", 60000);
+      check(window.statusText() == "Wysłano do drukarki: 1 strona" && pdfPages(printed) == 1,
+            "dialog job: one photo, two per sheet, one page in the file");
+      QFile saved(config + "/ky-prism/print.ini");
+      check(saved.open(QIODevice::ReadOnly) && saved.readAll().contains("ky-prism-per-page=2"),
+            "photo options remembered");
+    }
   }
 
   // --- language ---

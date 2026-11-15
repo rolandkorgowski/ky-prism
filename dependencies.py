@@ -15,7 +15,7 @@ import sys
 
 # The window is GTK 4; the decoder/cache engine uses the non-visual Qt modules.
 # Qt Widgets/Test are optional: only the legacy front end and its tests use them.
-MODULES = ['gtk4', 'epoxy', 'Qt6Core', 'Qt6Gui', 'Qt6Concurrent', 'vips-cpp', 'libraw', 'egl', 'gl', 'zlib']
+MODULES = ['gtk4', 'gtk4-unix-print', 'epoxy', 'Qt6Core', 'Qt6Gui', 'Qt6Concurrent', 'vips-cpp', 'libraw', 'egl', 'gl', 'zlib']
 
 # System package names per family. FreeBSD/OpenBSD names are the ports'
 # package names (pkg / pkg_add); pkg-config, make and the C++ compiler are in

@@ -3,6 +3,46 @@
 Raporty `reports/…` wymienione niżej są lokalnymi logami z testów i nie są publikowane w repozytorium.
 
 
+## 0.13.0 — drukowanie i praca w Claude Code z chmury
+
+**Drukowanie** (`Ctrl+P`, ikona na pasku, menu pod prawym przyciskiem)
+obejmuje zaznaczone zdjęcia, a bez zaznaczenia wyświetlone zdjęcie.
+
+- **Okno.** Systemowe okno drukowania GTK pokazuje drukarki wykrywane
+  przez CUPS i opcje ich sterownika (papier, orientacja, kopie, jakość,
+  kolor, dupleks). Do tego dochodzi karta **Zdjęcie**:
+  - zdjęć na kartce: 1, 2, 4, 6 lub 9 (jedno zdjęcie powtarza się na kartce),
+  - rozmiar: dopasuj, wypełnij z przycięciem, rzeczywisty według DPI
+    z pliku, 9×13, 10×15, 13×18, 15×21, 20×30 cm, A5, A4 albo własny w cm,
+    z przycięciem do formatu lub bez,
+  - skala 10–400 %, margines i odstęp,
+  - kolor albo odcienie szarości (liczone przez program, więc niezależne
+    od sterownika),
+  - jakość obrazu 150/300/600 dpi,
+  - nazwa pliku pod zdjęciem, obracanie do orientacji kartki,
+  - podgląd pierwszej kartki na żywo.
+- **Zapamiętywanie.** Ustawienia trafiają do `~/.config/ky-prism/print.ini`.
+- **Dlaczego własne okno.** GTK 4.22 drukuje domyślnie przez portal,
+  a portal nie pokazuje dodatkowych kart. Dlatego ky-prism otwiera
+  `GtkPrintUnixDialog` i wysyła wydruk przez `GtkPrintJob`. Okna wyboru
+  plików nadal używają portalu.
+- **Wątek tła.** Strony (PDF/PostScript dla CUPS) powstają w wątku tła:
+  dekodowanie tym samym silnikiem co ekran, w potrzebnej rozdzielczości,
+  nigdy powyżej oryginału.
+- **Testy.** `print_layout` sprawdza geometrię. `decode` sprawdza obraz
+  do druku w kolorze i w szarości. `gtk_ui` sprawdza eksport do PDF
+  (1 strona, 4 na kartce, 5 zdjęć → 2 strony) oraz okno z kartą
+  „Zdjęcie”, a „Drukuj do pliku” przez okno przechodzi całą ścieżkę
+  zadania drukowania.
+
+**Claude Code w chmurze:**
+- `CLAUDE.md` opisuje zasady pracy, budowanie i konwencje kodu dla każdej
+  sesji.
+- `docs/CLAUDE-CODE.md` to instrukcja: aplikacja Claude na GitHubie,
+  środowisko, telefon.
+- `docs/claude-code-cloud-setup.sh` to skrypt pakietów dla środowiska
+  w chmurze.
+
 ## 0.13.0 — kopie, przenoszenie i instalacja na BSD
 
 `./run.sh backup`, `restore`, `export` i `import` działają jak w kylowy-term:

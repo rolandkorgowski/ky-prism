@@ -25,6 +25,7 @@ nie przechwytują wpisywania tekstu w ścieżkach i filtrach.
 | Ctrl+Shift+F | Przeglądarka ulubionych |
 | Ctrl+C | Kopiuj wyświetlone zdjęcie do schowka: obraz (edytory, komunikatory) i plik (menedżer plików) |
 | Ctrl+E | Eksportuj kopię pliku: systemowe okno „Zapisz jako”, kopia bajt w bajt z EXIF |
+| Ctrl+P | Drukuj zaznaczone zdjęcia (bez zaznaczenia: wyświetlone) — drukarka z systemu, karta „Zdjęcie”: rozmiar, skala, kolor, jakość, kilka na kartce |
 | Ctrl+Shift+C | Kopiuj zaznaczone pliki; bez zaznaczenia bieżące zdjęcie |
 | Ctrl+Shift+D | Wyszukiwanie duplikatów |
 | Ctrl+I | Pokaż / ukryj EXIF |

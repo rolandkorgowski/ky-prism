@@ -10,6 +10,7 @@
 #include "local_path.h"
 #include "nvjpeg_backend.h"
 #include "photo_view.h"
+#include "print.h"
 #include "pixel_simd.h"
 #include "prefetch.h"
 #include "settings.h"
@@ -103,8 +104,9 @@ struct PrismWindow::Impl : QObject {
   std::unique_ptr<BookmarksDialog> bookmarksDialog;
   std::unique_ptr<AboutDialog> aboutDialog;
   std::unique_ptr<FileOpsDialog> fileDialog;
+  std::unique_ptr<PhotoPrint> printJob;
   GtkWidget *photoMenu = nullptr, *menuCopy = nullptr, *menuExport = nullptr,
-            *menuHeart = nullptr;
+            *menuPrint = nullptr, *menuHeart = nullptr;
   std::unique_ptr<UsbAccess> usb;
   QMap<QString, Gx::Callback> actionMap;
 
@@ -883,6 +885,50 @@ struct PrismWindow::Impl : QObject {
     else
       setStatus(QString("Wyeksportowano kopię: %1").arg(result.message));
   }
+  // Printing: the photos selected in the library, else the displayed one.
+  QStringList photosToPrint() const {
+    QStringList result;
+    for (const auto &path : selectedPhotos())
+      if (QFileInfo(path).isFile())
+        result.append(path);
+    return result;
+  }
+  bool startPrint(const QString &pdf = {}, const PrintOptions *options = nullptr) {
+    if (isShuttingDown)
+      return false;
+    if (printJob && printJob->running()) {
+      setStatus("Drukowanie już trwa.");
+      return false;
+    }
+    const auto photos = photosToPrint();
+    if (photos.isEmpty()) {
+      setStatus("Najpierw otwórz zdjęcie.");
+      return false;
+    }
+    printJob = std::make_unique<PhotoPrint>(window, photos);
+    printJob->status = [this, live = alive](const QString &text) {
+      if (*live && !isShuttingDown)
+        setStatus(text);
+    };
+    printJob->finished = [this, live = alive] {
+      if (*live)
+        Gx::later([this, live] {
+          if (*live && printJob && !printJob->running())
+            printJob.reset();
+        });
+    };
+    const int count = int(photos.size());
+    const int last = count % 10, lastTwo = count % 100;
+    setStatus(count == 1 ? QString("Drukowanie: %1").arg(QFileInfo(photos.first()).fileName())
+              : last >= 2 && last <= 4 && !(lastTwo >= 12 && lastTwo <= 14)
+                  ? QString("Drukowanie: %1 zdjęcia").arg(count)
+                  : QString("Drukowanie: %1 zdjęć").arg(count));
+    if (pdf.isEmpty())
+      printJob->run();
+    else
+      printJob->exportPdf(pdf, options ? *options : PrintOptions());
+    return true;
+  }
   // Right-click menu on a photograph.
   void buildPhotoMenu() {
     photoMenu = gtk_popover_new();
@@ -909,6 +955,7 @@ struct PrismWindow::Impl : QObject {
     };
     menuCopy = item("clipboard", "Kopiuj do schowka", "Ctrl+C", "copyImage");
     menuExport = item("export", "Eksportuj kopię pliku…", "Ctrl+E", "export");
+    menuPrint = item("print", "Drukuj…", "Ctrl+P", "print");
     gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
     menuHeart = item("heart", "Dodaj do ulubionych", "Ctrl+Shift+H", "heart");
     item("exif", "Informacje EXIF", "Ctrl+I", "exif");
@@ -923,6 +970,7 @@ struct PrismWindow::Impl : QObject {
     const bool photo = !activePhoto().isEmpty();
     gtk_widget_set_sensitive(menuCopy, photo);
     gtk_widget_set_sensitive(menuExport, photo);
+    gtk_widget_set_sensitive(menuPrint, photo);
     gtk_widget_set_sensitive(menuHeart, photo && !favorites->busy());
     Ui::text(Ui::buttonLabel(menuHeart), heartIsSelected ? "Usuń z ulubionych"
                                                          : "Dodaj do ulubionych");
@@ -1292,6 +1340,10 @@ struct PrismWindow::Impl : QObject {
              "Eksportuj kopię pliku — wybierz miejsce i nazwę • Ctrl+E",
              "export");
     Ui::accessible(exportButton, "Eksportuj kopię pliku");
+    auto *printButton = tool(
+        work, "print", "",
+        "Drukuj — drukarka, papier, rozmiar, kolor i jakość • Ctrl+P", "print");
+    Ui::accessible(printButton, "Drukuj zdjęcia");
     auto *copy = tool(
         work, "copyFiles", "",
         "Kopiuj zaznaczone zdjęcia • Ctrl+Shift+C • Ctrl/Shift: wiele plików",
@@ -1620,6 +1672,7 @@ struct PrismWindow::Impl : QObject {
     a["copy"] = [this] { showFileDialog(false); };
     a["copyImage"] = [this] { copyToClipboard(); };
     a["export"] = [this] { exportPhoto(); };
+    a["print"] = [this] { startPrint(); };
     a["photoMenu"] = [this] { showPhotoMenuFromKeyboard(); };
     a["duplicates"] = [this] { showFileDialog(true); };
     a["usb"] = [this] { openUsb(); };
@@ -1691,6 +1744,7 @@ struct PrismWindow::Impl : QObject {
     // selection first; elsewhere Ctrl+C copies the displayed photograph.
     key(GDK_KEY_c, Gx::Ctrl, "copyImage", false);
     key(GDK_KEY_e, Gx::Ctrl, "export");
+    key(GDK_KEY_p, Gx::Ctrl, "print");
     // Bubble phase: text fields keep their own context menu on these keys.
     key(GDK_KEY_Menu, Gx::NoModifier, "photoMenu", false);
     key(GDK_KEY_F10, Gx::Shift, "photoMenu", false);
@@ -2025,6 +2079,8 @@ struct PrismWindow::Impl : QObject {
     clipboardWatcher.disconnect(this);
     exportCancel->store(true);
     exportWatcher.disconnect(this);
+    if (printJob)
+      printJob->cancel();
     if (photoMenu)
       gtk_popover_popdown(GTK_POPOVER(photoMenu));
     storageTimer.stop();
@@ -2068,6 +2124,7 @@ PrismWindow::~PrismWindow() {
   d->bookmarksDialog.reset();
   d->aboutDialog.reset();
   d->fileDialog.reset();
+  d->printJob.reset();
   d->usb.reset();
   d->prefetchDelay.stop();
   delete d->prefetch;
@@ -2095,6 +2152,10 @@ void PrismWindow::exportTo(const QString &target) {
   d->exportTo(d->activePhoto(), target);
 }
 bool PrismWindow::exporting() const { return d->exportWatcher.isRunning(); }
+bool PrismWindow::printToPdf(const QString &file, const PrintOptions &options) {
+  return d->startPrint(file, &options);
+}
+bool PrismWindow::printing() const { return d->printJob && d->printJob->running(); }
 bool PrismWindow::copyingToClipboard() const {
   return d->clipboardWatcher.isRunning();
 }

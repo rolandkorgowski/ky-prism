@@ -27,6 +27,7 @@ class Document {
   vips::VImage original;
   QString identity;
   bool jpeg = false, alpha = false;
+  double dpi = 0; // resolution stored in the file (0: none)
   quint64 materializedBytes = 0;
   std::shared_ptr<std::atomic_bool> cancellation;
   std::map<int, vips::VImage> levels;
@@ -41,6 +42,11 @@ public:
   // The opened photograph (orientation applied, in the profile given to
   // open) as an 8-bit PNG, downscaled to at most `maxPixels` when larger.
   QByteArray encodePng(qint64 maxPixels, QSize *encoded = nullptr);
+  // Printing: the opened photograph as 8-bit RGB (or grey) on white, scaled
+  // down to `pixels` when smaller than the original (never up).
+  QImage renderForPrint(QSize pixels, bool grayscale);
+  double fileDpi() const { return dpi; }
+  QSize size() const;
   void clear();
   static int previewBucket(int edge);
   static int sharedPreviewKiB();

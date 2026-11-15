@@ -61,6 +61,22 @@ int main(int argc, char **argv) {
     doc.open(small, {}, token);
     require(doc.tile(0, 0, 0).image.pixelColor(1, 1) == QColor(210, 100, 30),
             "8-to-16-bit exact expansion");
+    // Printing: 8-bit colour or grey on white, never larger than asked.
+    {
+      auto print = tmp.path() + "/print.tif";
+      vips::VImage::black(40, 20, vips::VImage::option()->set("bands", 3))
+          .new_from_image({200, 40, 30})
+          .copy(vips::VImage::option()->set("interpretation", VIPS_INTERPRETATION_sRGB))
+          .tiffsave(print.toUtf8().constData());
+      doc.open(print, {}, token);
+      const auto colour = doc.renderForPrint(QSize(20, 20), false);
+      require(colour.size() == QSize(20, 10), "print render keeps aspect within the box");
+      const QColor c = colour.pixelColor(5, 5);
+      require(std::abs(c.red() - 200) <= 2 && std::abs(c.green() - 40) <= 2, "print colour");
+      const QColor g = doc.renderForPrint(QSize(), true).pixelColor(5, 5);
+      require(g.red() == g.green() && g.green() == g.blue() && g.red() < 200 && g.red() > 40,
+              "print greyscale");
+    }
     // Embedded profiles need libvips with lcms2 (not the OpenBSD package).
     if (vips_icc_present()) {
       auto icc = tmp.path() + "/icc.tif";

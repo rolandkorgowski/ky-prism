@@ -17,6 +17,8 @@ pkg_check_modules(VIPS REQUIRED IMPORTED_TARGET vips-cpp)
 pkg_check_modules(RAW REQUIRED IMPORTED_TARGET libraw)
 pkg_check_modules(GTK4 REQUIRED IMPORTED_TARGET gtk4>=4.12)
 pkg_check_modules(EPOXY REQUIRED IMPORTED_TARGET epoxy)
+# In-process print dialog (the print portal cannot show the "Zdjęcie" tab).
+pkg_check_modules(GTK4_UNIX_PRINT REQUIRED IMPORTED_TARGET gtk4-unix-print)
 # The legacy Qt front end and its tests were written for Linux (udisks, /proc);
 # on FreeBSD/OpenBSD only the GTK program and the engine are built.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -35,7 +37,7 @@ endif()
 add_library(prism_engine STATIC
  src/raster_source.cpp src/language.cpp src/document.cpp src/prefetch.cpp
  src/thumbnail_cache.cpp src/thumbnail_disk.cpp src/nvjpeg_backend.cpp
- src/pixel_simd.cpp src/favorites.cpp src/file_ops_core.cpp)
+ src/pixel_simd.cpp src/favorites.cpp src/file_ops_core.cpp src/print_layout.cpp)
 target_include_directories(prism_engine PUBLIC src)
 target_link_libraries(prism_engine PUBLIC Qt6::Core Qt6::Gui Qt6::Concurrent PkgConfig::VIPS PkgConfig::RAW ZLIB::ZLIB ${CMAKE_DL_LIBS})
 
@@ -88,10 +90,10 @@ prism_harden(prism_engine -Werror)
 add_library(prism_gtk STATIC
  src/gtk/window.cpp src/gtk/photo_view.cpp src/gtk/library_pane.cpp
  src/gtk/dialogs.cpp src/gtk/table.cpp src/gtk/theme.cpp src/gtk/icons.cpp
- src/gtk/ui_text.cpp src/gtk/settings.cpp)
+ src/gtk/ui_text.cpp src/gtk/settings.cpp src/gtk/print.cpp)
 set_target_properties(prism_gtk PROPERTIES AUTOMOC OFF)
 target_include_directories(prism_gtk PUBLIC src src/gtk)
-target_link_libraries(prism_gtk PUBLIC prism_engine PkgConfig::GTK4 PkgConfig::EPOXY)
+target_link_libraries(prism_gtk PUBLIC prism_engine PkgConfig::GTK4 PkgConfig::GTK4_UNIX_PRINT PkgConfig::EPOXY)
 target_compile_definitions(prism_gtk PUBLIC PRISM_VERSION="${PROJECT_VERSION}")
 prism_harden(prism_gtk -Wno-deprecated-declarations)
 add_executable(ky-prism src/gtk/main.cpp)
@@ -169,6 +171,9 @@ if(LUA_INTERPRETER)
  target_link_libraries(prism-window-control-test PRIVATE Qt6::Core)
  add_test(NAME window_control COMMAND prism-window-control-test)
 endif()
+add_executable(prism-print-layout-test tests/print_layout.cpp)
+target_link_libraries(prism-print-layout-test PRIVATE prism_engine)
+add_test(NAME print_layout COMMAND prism-print-layout-test)
 add_executable(prism-exif-orientation-test tests/exif_orientation.cpp)
 target_link_libraries(prism-exif-orientation-test PRIVATE prism_engine)
 add_test(NAME exif_orientation COMMAND prism-exif-orientation-test)

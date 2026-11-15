@@ -470,6 +470,18 @@ void draw(cairo_t *cr, const QString &name, double x, double y, double size,
     p.polyline({4, 14, 4, 20, 20, 20, 20, 14});
     p.line(12, 16, 12, 3.5);
     p.polyline({7.5, 8, 12, 3.5, 16.5, 8});
+  } else if (name == "print") {
+    // Printer: paper in, body, printed sheet out.
+    p.setBrush(paper);
+    p.rect(7, 3, 10, 6);
+    p.setBrush(soft);
+    p.roundedRect(3, 9, 18, 8, 2);
+    p.setBrush(paper);
+    p.rect(7, 14, 10, 7);
+    p.noBrush();
+    p.line(9, 17, 15, 17);
+    p.line(9, 19, 13, 19);
+    p.point(18, 12);
   } else if (name == "heart") {
     p.path([](cairo_t *c) {
       cairo_move_to(c, 12, 20);

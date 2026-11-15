@@ -62,4 +62,7 @@ public:
   bool exporting() const;
   bool copyingToClipboard() const;
   void showPhotoMenu(double x, double y);
+  // Tests: print the selected/displayed photos to a PDF without the dialog.
+  bool printToPdf(const QString &file, const struct PrintOptions &options);
+  bool printing() const;
 };

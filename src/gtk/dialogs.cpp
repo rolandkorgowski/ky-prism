@@ -624,6 +624,7 @@ AboutDialog::AboutDialog(GtkWindow *parent) : d(new Impl) {
       {"Ctrl+Shift+F", "Przeglądarka ulubionych zdjęć"},
       {"Ctrl+C", "Kopiuj wyświetlone zdjęcie do schowka (obraz i plik)"},
       {"Ctrl+E", "Eksportuj kopię pliku — wybierz miejsce i nazwę…"},
+      {"Ctrl+P", "Drukuj: drukarka, papier, rozmiar, skala, kolor, jakość…"},
       {"Ctrl+Shift+C", "Kopiuj zaznaczone pliki / bieżące zdjęcie…"},
       {"Ctrl+Shift+D", "Szukaj duplikatów plików…"},
       {"Prawy przycisk na zdjęciu / Menu / Shift+F10",

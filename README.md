@@ -173,7 +173,14 @@ To see what is missing without installing anything:
   into editors and messengers, or as a file into a file manager.
 - Export a byte-identical copy of the file, EXIF included, to a place and
   name you choose (`Ctrl+E`). Existing files are never overwritten.
-- Right-click menu on the photo: copy, export, favourites, EXIF, full screen.
+- Printing (`Ctrl+P`) through the system print dialog, with printers detected
+  from the system (CUPS) and their driver options. An extra **Zdjęcie** (Photo)
+  tab sets photos per sheet (1–9, contact sheets), print size (fit, fill, actual
+  size from the file's DPI, 9×13 to 20×30 cm, A5, A4 or custom), scale, margins,
+  colour or greyscale, image quality (150/300/600 dpi), file names under photos,
+  and shows a live preview of the sheet. Settings are remembered.
+- Right-click menu on the photo: copy, export, print, favourites, EXIF, full
+  screen.
 - Favourites, bookmarks, EXIF panel, copying to USB drives and duplicate
   search. Originals are never modified.
 - Adjustable interface opacity (`Ctrl+Alt+O`). It changes only the toolbars
@@ -219,7 +226,9 @@ Aktualizacja: `cd ky-prism && git pull && ./run.sh install`.
 (the `gtk_ui` test; it also uses the clipboard). For stability checks,
 `./run.sh gtk-test --stress 20` repeatedly opens a 24-megapixel photo,
 copies it to the clipboard and exports it, printing memory use and the
-longest pause of the window per round. Change history and engineering notes are in
+longest pause of the window per round. Working on ky-prism with Claude Code
+from a browser or phone (cloud sessions): [docs/CLAUDE-CODE.md](docs/CLAUDE-CODE.md).
+Change history and engineering notes are in
 [docs/HISTORY.md](docs/HISTORY.md) (in Polish).
 
 ## License
