@@ -2261,11 +2261,12 @@ struct PrismWindow::Impl : QObject {
     }
     // Only different files of the same name are a question: identical ones
     // would not change, links, folders and special files are never touched.
-    int fresh = 0, existing = 0, blocked = 0;
+    int fresh = 0, existing = 0, identical = 0, blocked = 0;
     dropSkipped.clear();
     for (const auto &item : result.items) {
       fresh += item.state == CopyItem::Fresh;
       existing += item.state == CopyItem::Exists;
+      identical += item.state == CopyItem::Identical;
       if (item.state == CopyItem::Blocked && blocked++ == 0)
         dropSkipped = Ui::tr("%1 — pominięty: %2")
                           .arg(QFileInfo(item.target).fileName(),
@@ -2277,6 +2278,8 @@ struct PrismWindow::Impl : QObject {
                                               "…i jeszcze %1 plików"));
     if (existing)
       askOverwrite(result.items, fresh, existing);
+    else if (identical)
+      tellIdentical(result.items, fresh, identical);
     else if (fresh)
       startDropCopy(result.items, false);
     else
@@ -2288,8 +2291,7 @@ struct PrismWindow::Impl : QObject {
         QLocale().toString(QDateTime::fromMSecsSinceEpoch(modified),
                            QLocale::ShortFormat));
   }
-  void askOverwrite(const QList<CopyItem> &items, int fresh, int existing) {
-    const QString name = dropFolderName();
+  static QString dropDetails(const QList<CopyItem> &items) {
     // Files that would change first, then the ones that stay as they are.
     QStringList replaced, same, skipped;
     for (const auto &item : items) {
@@ -2311,6 +2313,54 @@ struct PrismWindow::Impl : QObject {
       lines.append(Ui::tr(Ui::counted(hidden, "…i jeszcze %1 plik",
                                       "…i jeszcze %1 pliki",
                                       "…i jeszcze %1 plików")));
+    return lines.join('\n');
+  }
+  // The same photo is already in the folder: say so, although nothing would
+  // change. There is nothing to overwrite, so no overwrite button.
+  void tellIdentical(const QList<CopyItem> &items, int fresh, int identical) {
+    const QString name = dropFolderName();
+    QString text =
+        identical == 1
+            ? Ui::tr("W folderze „%1” jest już ten sam plik, identyczny co do "
+                     "bajtu. Nie trzeba go nadpisywać.")
+                  .arg(name)
+            : Ui::tr(Ui::counted(identical, // n ≥ 2: the first form is never used
+                                 "W folderze „%2” są już te same %1 pliki, "
+                                 "identyczne co do bajtu. Nie trzeba ich "
+                                 "nadpisywać.",
+                                 "W folderze „%2” są już te same %1 pliki, "
+                                 "identyczne co do bajtu. Nie trzeba ich "
+                                 "nadpisywać.",
+                                 "W folderze „%2” jest już tych samych %1 "
+                                 "plików, identycznych co do bajtu. Nie trzeba "
+                                 "ich nadpisywać."))
+                  .arg(name);
+    if (fresh)
+      text += " " + Ui::tr(Ui::counted(fresh, "Pozostały %1 plik można skopiować.",
+                                       "Pozostałe %1 pliki można skopiować.",
+                                       "Pozostałe %1 plików można skopiować."));
+    const QStringList buttons = fresh ? QStringList{"&Anuluj", "&Kopiuj pozostałe"}
+                                      : QStringList{"&Zamknij"};
+    dropAsking = true;
+    Dialogs::message(
+        window, identical == 1 ? "Plik już istnieje" : "Pliki już istnieją",
+        text, dropDetails(items), buttons, fresh ? 1 : 0, 0,
+        [this, live = alive, items, fresh](int choice) {
+          if (!*live)
+            return;
+          dropAsking = false;
+          if (isShuttingDown)
+            return;
+          if (fresh && choice == 1)
+            startDropCopy(items, false);
+          else if (fresh)
+            setStatus("Kopiowanie anulowane. Nic nie zmieniono.");
+          else
+            dropCopiedReport(FileOps::copyItems(items, false, dropCancel));
+        });
+  }
+  void askOverwrite(const QList<CopyItem> &items, int fresh, int existing) {
+    const QString name = dropFolderName();
     const QString text =
         existing == 1
             ? QString("W folderze „%1” jest już plik o tej nazwie. Nadpisać "
@@ -2339,7 +2389,7 @@ struct PrismWindow::Impl : QObject {
     dropAsking = true;
     Dialogs::message(
         window, existing == 1 ? "Plik już istnieje" : "Pliki już istnieją",
-        text, lines.join('\n'), buttons, canSkip ? 1 : 0, 0,
+        text, dropDetails(items), buttons, canSkip ? 1 : 0, 0,
         [this, live = alive, items, canSkip](int choice) {
           if (!*live)
             return;

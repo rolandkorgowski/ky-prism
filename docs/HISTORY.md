@@ -21,10 +21,11 @@ zaznaczenie. Foldery nie są przeciągane.
      (porównanie bajt po bajcie), tym samym plikiem (to samo urządzenie
      i i-węzeł) albo zablokowany (dowiązanie, folder lub plik specjalny
      o tej nazwie, źródło niebędące zwykłym plikiem).
-  2. Tylko inne pliki o tej nazwie wywołują pytanie: Anuluj, Pomiń
-     istniejące (domyślne) albo Nadpisz. Okno pokazuje rozmiar i datę obu
-     wersji. Pliki identyczne i zablokowane są wymienione informacyjnie
-     i nigdy nie są zmieniane.
+  2. Inne pliki o tej nazwie wywołują pytanie: Anuluj, Pomiń istniejące
+     (domyślne) albo Nadpisz. Okno pokazuje rozmiar i datę obu wersji.
+     Gdy są tylko pliki identyczne, okienko informuje, że ten sam plik już
+     jest, bez przycisku „Nadpisz” (Zamknij albo Anuluj / Kopiuj pozostałe).
+     Pliki identyczne i zablokowane nigdy nie są zmieniane.
   3. `FileOps::copyItems` kopiuje w tle z postępem na pasku stanu.
 
 **Bezpieczeństwo zapisu (także przy zaniku zasilania).** Każda kopia powstaje

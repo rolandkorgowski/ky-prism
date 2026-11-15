@@ -224,8 +224,11 @@ To see what is missing without installing anything:
   programs (copy only), onto the photo to open it, onto the second photo to
   compare, or onto a folder in the list to copy them there. A file of the
   same name is never overwritten without asking: Cancel, Skip existing or
-  Overwrite. Copies are written to a temporary file, synced to disk and then
-  renamed in one step, so an interruption never leaves a half-written photo.
+  Overwrite; when the very same file is already there, a notice says so.
+  Copies are written to a temporary file, synced to disk and then renamed in
+  one step, so on Linux and BSD filesystems (ext4, btrfs, XFS, ZFS, UFS) an
+  interruption or power cut leaves either the old or the new file, never a
+  half-written one. FAT/exFAT drives do not guarantee this.
 - Favourites, bookmarks, EXIF panel, copying to USB drives and duplicate
   search. Originals are never modified.
 - Adjustable interface opacity (`Ctrl+Alt+O`). It changes only the toolbars

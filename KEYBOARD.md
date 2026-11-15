@@ -69,9 +69,10 @@ zaznaczenie. Foldery nie są przeciągane.
 - **Na folder na liście** kopiuje zdjęcia do tego folderu (folder podświetla
   się pod kursorem). Gdy jest tam już **inny** plik o tej samej nazwie,
   pojawia się pytanie: Anuluj, Pomiń istniejące (domyślne) albo Nadpisz.
-  Bez wybrania „Nadpisz” nic nie zostanie nadpisane. Pliki identyczne co do
-  bajtu, dowiązania, foldery i pliki specjalne o tej nazwie nigdy nie są
-  zmieniane.
+  Bez wybrania „Nadpisz” nic nie zostanie nadpisane. Gdy w folderze jest już
+  dokładnie ten sam plik (identyczny co do bajtu), okienko o tym informuje
+  i niczego nie nadpisuje. Dowiązania, foldery i pliki specjalne o tej nazwie
+  nigdy nie są zmieniane.
 
 ## Zakładki i ulubione
 

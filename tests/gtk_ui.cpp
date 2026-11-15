@@ -623,15 +623,19 @@ void scenario(const QString &photos, const QString &config,
     check(bytesOf(holiday + "/red.jpg") == bytesOf(red), "the copy is byte-identical");
     const auto copiedInode = inodeOf(holiday + "/red.jpg");
     window.dropFiles({red}, rx, ry, true);
+    waitFor([&] { return dialogOf(gtkWindow) != nullptr; }, "same-file notice");
+    check(!press(dialogOf(gtkWindow), "Nadpisz") &&
+              press(dialogOf(gtkWindow), "Zamknij"),
+          "the same file: a notice without an overwrite button");
     waitFor(
         [&] {
-          return !window.copyingToFolder() &&
+          return !window.copyingToFolder() && !dialogOf(gtkWindow) &&
                  window.statusText() ==
                      "Nic nie skopiowano do „Wakacje”: 1 bez zmian (ten sam plik).";
         },
         "identical file reported");
-    check(!dialogOf(gtkWindow) && inodeOf(holiday + "/red.jpg") == copiedInode,
-          "an identical file is neither asked about nor rewritten");
+    check(inodeOf(holiday + "/red.jpg") == copiedInode,
+          "an identical file is never rewritten");
     solid(holiday + "/green.jpg", 64, 64, {1, 2, 3});
     const QByteArray kept = bytesOf(holiday + "/green.jpg");
     const auto keptInode = inodeOf(holiday + "/green.jpg");

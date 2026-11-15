@@ -557,6 +557,13 @@ inline const QHash<QString,QString> &prismEnglishCatalog() {
     {QString::fromUtf8("Przerwano kopiowanie do „%1” na pliku %2: %3 Wcześniej: %4."),QString::fromUtf8("Copying to “%1” stopped at the file %2: %3 Done before that: %4.")},
     {QString::fromUtf8("Nic nie skopiowano do „%1”: %2."),QString::fromUtf8("Nothing copied to “%1”: %2.")},
     {QString::fromUtf8("Skopiowano do „%1”: %2."),QString::fromUtf8("Copied to “%1”: %2.")},
+    {QString::fromUtf8("W folderze „%1” jest już ten sam plik, identyczny co do bajtu. Nie trzeba go nadpisywać."),QString::fromUtf8("The folder “%1” already has the very same file, identical byte for byte. There is nothing to overwrite.")},
+    {QString::fromUtf8("W folderze „%2” są już te same %1 pliki, identyczne co do bajtu. Nie trzeba ich nadpisywać."),QString::fromUtf8("The folder “%2” already has the same %1 files, identical byte for byte. There is nothing to overwrite.")},
+    {QString::fromUtf8("W folderze „%2” jest już tych samych %1 plików, identycznych co do bajtu. Nie trzeba ich nadpisywać."),QString::fromUtf8("The folder “%2” already has the same %1 files, identical byte for byte. There is nothing to overwrite.")},
+    {QString::fromUtf8("Pozostały %1 plik można skopiować."),QString::fromUtf8("The remaining %1 file can be copied.")},
+    {QString::fromUtf8("Pozostałe %1 pliki można skopiować."),QString::fromUtf8("The remaining %1 files can be copied.")},
+    {QString::fromUtf8("Pozostałe %1 plików można skopiować."),QString::fromUtf8("The remaining %1 files can be copied.")},
+    {QString::fromUtf8("&Kopiuj pozostałe"),QString::fromUtf8("&Copy the rest")},
   };
   return data;
 }
