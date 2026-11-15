@@ -275,6 +275,21 @@ from a browser or phone (cloud sessions): [docs/CLAUDE-CODE.md](docs/CLAUDE-CODE
 Change history and engineering notes are in
 [docs/HISTORY.md](docs/HISTORY.md) (in Polish).
 
+## Disclaimer / Wyłączenie odpowiedzialności
+
+ky-prism is provided free of charge, **“as is”, without warranty of any
+kind**, including stability and fitness for a particular purpose. To the
+fullest extent permitted by applicable law, the author and distributors are
+**not liable for any damages** arising from its use, including loss of data,
+files or prints. You use the program at your own risk; keep backups of your
+photos. Full text in Polish and English: [DISCLAIMER.md](DISCLAIMER.md)
+(based on sections 15–16 of the GPL v3.0).
+
+Program jest udostępniany bezpłatnie, **„tak jak jest”, bez jakiejkolwiek
+gwarancji**. W najszerszym zakresie dopuszczalnym przez prawo autor **nie
+odpowiada za szkody** wynikające z jego używania, w tym za utratę danych,
+plików i wydruków. Pełna treść: [DISCLAIMER.md](DISCLAIMER.md).
+
 ## License
 
 Copyright © 2026 Krzysztof Kylen Lenartowicz. Released under the GNU General

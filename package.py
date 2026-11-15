@@ -4,7 +4,7 @@ import configparser
 import datetime, hashlib, json, os, shutil, subprocess, sys, tarfile, tempfile
 from pathlib import Path
 ROOT = Path(__file__).resolve().parent
-SOURCES = ['CMakeLists.txt', 'CLAUDE.md', 'dependencies.py', 'run.sh', 'package.py', 'prismctl.py', 'ky-prism', 'ky-prism.desktop', 'COPYRIGHT.md', 'KEYBOARD.md', 'omarchy-prism', 'omarchy-prism.desktop', 'omarchy-prism.svg', 'README.md', 'LICENSE', 'prism.lua', 'src', 'tests', 'plugin', 'terminal-plugin', 'chrome-plugin', 'omarchy-prism-chrome', 'omarchy-prism-terminal', 'omarchy-prism-open', 'publication/prepare.py', 'publication/README.md', 'publication/templates', 'publication/tests', 'i18n', 'diagnose-hang.py', 'transfer.py', 'updates', 'docs']
+SOURCES = ['CMakeLists.txt', 'CLAUDE.md', 'DISCLAIMER.md', 'dependencies.py', 'run.sh', 'package.py', 'prismctl.py', 'ky-prism', 'ky-prism.desktop', 'COPYRIGHT.md', 'KEYBOARD.md', 'omarchy-prism', 'omarchy-prism.desktop', 'omarchy-prism.svg', 'README.md', 'LICENSE', 'prism.lua', 'src', 'tests', 'plugin', 'terminal-plugin', 'chrome-plugin', 'omarchy-prism-chrome', 'omarchy-prism-terminal', 'omarchy-prism-open', 'publication/prepare.py', 'publication/README.md', 'publication/templates', 'publication/tests', 'i18n', 'diagnose-hang.py', 'transfer.py', 'updates', 'docs']
 def digest(path):
     h = hashlib.sha256()
     with path.open('rb') as f:

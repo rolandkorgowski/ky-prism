@@ -497,5 +497,6 @@
   "%1 strony": "%1 pages",
   "%1 stron": "%1 pages",
   "Drukowanie: %1 zdjęcia": "Printing: %1 photos",
-  "Nie wybrano drukarki.": "No printer selected."
+  "Nie wybrano drukarki.": "No printer selected.",
+  "Program jest udostępniany bezpłatnie na licencji GNU GPL v3.0, „tak jak jest”, bez jakiejkolwiek gwarancji, w tym stabilności i przydatności do określonego celu. W najszerszym zakresie dopuszczalnym przez prawo autor nie odpowiada za szkody wynikające z używania programu, w tym za utratę danych, plików i wydruków. Pełna treść: DISCLAIMER.md i LICENSE.": "The program is provided free of charge under the GNU GPL v3.0, “as is”, without warranty of any kind, including stability and fitness for a particular purpose. To the fullest extent permitted by law, the author is not liable for any damages arising from its use, including loss of data, files or prints. Full text: DISCLAIMER.md and LICENSE."
 }

@@ -504,6 +504,7 @@ inline const QHash<QString,QString> &prismEnglishCatalog() {
     {QString::fromUtf8("%1 stron"),QString::fromUtf8("%1 pages")},
     {QString::fromUtf8("Drukowanie: %1 zdjęcia"),QString::fromUtf8("Printing: %1 photos")},
     {QString::fromUtf8("Nie wybrano drukarki."),QString::fromUtf8("No printer selected.")},
+    {QString::fromUtf8("Program jest udostępniany bezpłatnie na licencji GNU GPL v3.0, „tak jak jest”, bez jakiejkolwiek gwarancji, w tym stabilności i przydatności do określonego celu. W najszerszym zakresie dopuszczalnym przez prawo autor nie odpowiada za szkody wynikające z używania programu, w tym za utratę danych, plików i wydruków. Pełna treść: DISCLAIMER.md i LICENSE."),QString::fromUtf8("The program is provided free of charge under the GNU GPL v3.0, “as is”, without warranty of any kind, including stability and fitness for a particular purpose. To the fullest extent permitted by law, the author is not liable for any damages arising from its use, including loss of data, files or prints. Full text: DISCLAIMER.md and LICENSE.")},
   };
   return data;
 }

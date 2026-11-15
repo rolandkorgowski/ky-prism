@@ -323,6 +323,7 @@ window.maximized .prism-root, window.fullscreen .prism-root, window.tiled .prism
 .prism-sidebar { padding: 10px 10px 8px 10px; }
 .prism-footer { padding: 5px 14px 6px 14px; border-top: 1px solid EDGE; font-size: 0.92em; }
 .prism-dim { color: FG70; }
+.prism-legal { color: FG70; font-size: 0.82em; }
 .prism-section { font-size: 0.8em; font-weight: 700; letter-spacing: 1.4px; color: FG60; }
 .prism-stage { background-color: #131313; }
 .prism-caption { padding: 2px 4px 2px 10px; background-color: GLASS; border-bottom: 1px solid EDGE; font-size: 0.95em; }

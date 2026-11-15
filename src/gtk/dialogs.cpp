@@ -596,6 +596,16 @@ AboutDialog::AboutDialog(GtkWindow *parent) : d(new Impl) {
            "CMS\nBiblioteki zewnętrzne zachowują własne prawa i licencje.",
            "prism-dim");
   // clang-format on
+  // Warranty disclaimer and limitation of liability (GPL v3.0, sections 15–16).
+  auto *legal = centered("Program jest udostępniany bezpłatnie na licencji GNU GPL v3.0, "
+                         "„tak jak jest”, bez jakiejkolwiek gwarancji, w tym stabilności "
+                         "i przydatności do określonego celu. W najszerszym zakresie "
+                         "dopuszczalnym przez prawo autor nie odpowiada za szkody "
+                         "wynikające z używania programu, w tym za utratę danych, plików "
+                         "i wydruków. Pełna treść: DISCLAIMER.md i LICENSE.",
+                         "prism-legal", true);
+  gtk_label_set_max_width_chars(GTK_LABEL(legal), 78);
+  gtk_widget_set_margin_top(legal, 6);
   gtk_stack_add_named(GTK_STACK(d->stack), identity, "about");
 
   Table::Options options;
