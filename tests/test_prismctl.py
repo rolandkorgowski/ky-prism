@@ -29,7 +29,7 @@ class Transfer(unittest.TestCase):
         (self.data / 'favorites.json').write_text('{"version":1,"photos":[]}')
         (self.data / 'bookmarks.json').write_text('["/zdjęcia"]')
         (self.data / 'language.json').write_text('{"version":1,"language":"en","extra":"dropped"}')
-        (self.config / 'appearance.json').write_text('{"ui_opacity_percent":80}')
+        (self.config / 'appearance.json').write_text('{"ui_opacity_percent":80,"smooth_zoom":true}')
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -50,6 +50,9 @@ class Transfer(unittest.TestCase):
             self.assertEqual(json.load(tar.extractfile('ky-prism-ustawienia/data/language.json')),
                              {'version': 1, 'language': 'en'})
         self.assertIn('ky-prism-ustawienia/config/appearance.json', names)
+        with tarfile.open(archive) as tar:
+            self.assertEqual(json.load(tar.extractfile('ky-prism-ustawienia/config/appearance.json')),
+                             {'ui_opacity_percent': 80, 'smooth_zoom': True})
         self.assertIn('ky-prism-ustawienia/USTAWIENIA.txt', names)
         # Restore into a changed account: current settings are saved first.
         (self.data / 'language.json').write_text('{"version":1,"language":"pl"}')

@@ -29,6 +29,9 @@ public:
 
   void open(const QString &path, const QString &displayProfile = {});
   void fit();
+  // Interpolated magnification (off: sharp pixels from 1:1 upwards).
+  void setSmoothZoom(bool enabled);
+  bool smoothZoom() const;
   void actual();
   void scale(double factor, QPointF anchor);
   void scaleCentered(double factor);

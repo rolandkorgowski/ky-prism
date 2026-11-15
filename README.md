@@ -224,6 +224,10 @@ To see what is missing without installing anything:
   search. Originals are never modified.
 - Adjustable interface opacity (`Ctrl+Alt+O`). It changes only the toolbars
   and panels; the photo is always shown fully opaque.
+- Sharp pixels when zoomed in: from 100 % every photo pixel is shown as a
+  crisp block, never blended with its neighbours. Interpolated smoothing is
+  an option in the same panel (`Ctrl+Alt+O`). The photo's pixels are never
+  changed either way.
 - Follows the system's light/dark scheme and accent colour, and Omarchy themes.
 - Polish and English interface.
 

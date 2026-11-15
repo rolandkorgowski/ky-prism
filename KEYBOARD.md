@@ -29,7 +29,7 @@ nie przechwytują wpisywania tekstu w ścieżkach i filtrach.
 | Ctrl+Shift+C | Kopiuj zaznaczone pliki; bez zaznaczenia bieżące zdjęcie |
 | Ctrl+Shift+D | Wyszukiwanie duplikatów |
 | Ctrl+I | Pokaż / ukryj EXIF |
-| Ctrl+Alt+O | Krycie interfejsu: suwak (strzałki ←/→, PageUp/PageDown); Esc zamyka |
+| Ctrl+Alt+O | Wygląd: suwak krycia interfejsu (strzałki ←/→, PageUp/PageDown) i przełącznik „Wygładzaj piksele w powiększeniu” (domyślnie wyłączony: ostre piksele od 100 %); Esc zamyka |
 | Ctrl+M | Maksymalizuj / przywróć okno |
 | F11 / Esc | Pełny ekran / wyjdź z pełnego ekranu |
 | Ctrl++ / Ctrl+− | Zoom do środka widoku |

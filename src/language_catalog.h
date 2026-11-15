@@ -505,6 +505,14 @@ inline const QHash<QString,QString> &prismEnglishCatalog() {
     {QString::fromUtf8("Drukowanie: %1 zdjęcia"),QString::fromUtf8("Printing: %1 photos")},
     {QString::fromUtf8("Nie wybrano drukarki."),QString::fromUtf8("No printer selected.")},
     {QString::fromUtf8("Program jest udostępniany bezpłatnie na licencji GNU GPL v3.0, „tak jak jest”, bez jakiejkolwiek gwarancji, w tym stabilności i przydatności do określonego celu. W najszerszym zakresie dopuszczalnym przez prawo autor nie odpowiada za szkody wynikające z używania programu, w tym za utratę danych, plików i wydruków. Pełna treść: DISCLAIMER.md i LICENSE."),QString::fromUtf8("The program is provided free of charge under the GNU GPL v3.0, “as is”, without warranty of any kind, including stability and fitness for a particular purpose. To the fullest extent permitted by law, the author is not liable for any damages arising from its use, including loss of data, files or prints. Full text: DISCLAIMER.md and LICENSE.")},
+    {QString::fromUtf8("Powiększenie zdjęcia"),QString::fromUtf8("Photo magnification")},
+    {QString::fromUtf8("Wygładzaj piksele w powiększeniu"),QString::fromUtf8("Smooth pixels when magnified")},
+    {QString::fromUtf8("Wyłączone (domyślnie): od 100 % każdy piksel zdjęcia jest\nostrym kwadratem. Włączone: przejścia między pikselami\nsą wygładzane. Same piksele zdjęcia się nie zmieniają."),QString::fromUtf8("Off (default): from 100 % every photo pixel is a\nsharp block. On: transitions between pixels are\nsmoothed. The photo's own pixels never change.")},
+    {QString::fromUtf8("Wygląd: krycie interfejsu i wygładzanie powiększenia • Ctrl+Alt+O"),QString::fromUtf8("Appearance: interface opacity and magnification smoothing • Ctrl+Alt+O")},
+    {QString::fromUtf8("Wygląd: krycie interfejsu i powiększenie"),QString::fromUtf8("Appearance: interface opacity and magnification")},
+    {QString::fromUtf8("Wygładzanie pikseli w powiększeniu: włączone."),QString::fromUtf8("Smoothing of magnified pixels: on.")},
+    {QString::fromUtf8("Ostre piksele w powiększeniu (domyślne)."),QString::fromUtf8("Sharp pixels when magnified (default).")},
+    {QString::fromUtf8("Wygląd: krycie interfejsu i wygładzanie pikseli w powiększeniu"),QString::fromUtf8("Appearance: interface opacity and smoothing of magnified pixels")},
   };
   return data;
 }

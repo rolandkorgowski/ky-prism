@@ -88,7 +88,13 @@ def _appearance(data):
     percent = value.get('ui_opacity_percent') if isinstance(value, dict) else None
     if type(percent) is not int or not 0 <= percent <= 100:
         raise ValueError('nieprawidłowe krycie interfejsu')
-    return (json.dumps({'ui_opacity_percent': percent}) + '\n').encode()
+    kept = {'ui_opacity_percent': percent}
+    smooth = value.get('smooth_zoom')
+    if smooth is not None:
+        if type(smooth) is not bool:
+            raise ValueError('nieprawidłowe ustawienie wygładzania')
+        kept['smooth_zoom'] = smooth
+    return (json.dumps(kept) + '\n').encode()
 
 
 # (name in the archive, description, location, validator, size limit)
@@ -96,7 +102,7 @@ SETTINGS = [
     ('data/favorites.json', 'ulubione zdjęcia', lambda: data_home() / 'omarchy-prism/favorites.json', _favorites, 8 << 20),
     ('data/bookmarks.json', 'zakładki katalogów', lambda: data_home() / 'omarchy-prism/bookmarks.json', _bookmarks, 128 << 10),
     ('data/language.json', 'język interfejsu', lambda: data_home() / 'omarchy-prism/language.json', _language, 4 << 10),
-    ('config/appearance.json', 'krycie interfejsu', lambda: config_home() / 'ky-prism/appearance.json', _appearance, 4 << 10),
+    ('config/appearance.json', 'krycie interfejsu i wygładzanie', lambda: config_home() / 'ky-prism/appearance.json', _appearance, 4 << 10),
 ]
 # Older exports kept the same files in ky-prism/user-data/.
 LEGACY_NAMES = {'favorites.json': 'data/favorites.json', 'bookmarks.json': 'data/bookmarks.json',

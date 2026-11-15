@@ -15,6 +15,10 @@ int storedOpacity(const QByteArray &environment, const QString &file);
 int defaultOpacity(bool compositorBlurs);
 // Atomic write that preserves unrelated keys already present in the file.
 bool saveOpacity(const QString &file, int percent);
+// Interpolated ("smooth") magnification of photo pixels from 1:1 upwards.
+// Off by default: every photo pixel is a sharp block.
+bool storedSmoothZoom(const QString &file);
+bool saveSmoothZoom(const QString &file, bool enabled);
 // Chrome alpha (0.0–1.0) used by the stylesheet for a 0–100 percent value.
 double alphaFor(int percent);
 } // namespace PrismSettings

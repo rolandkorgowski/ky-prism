@@ -105,6 +105,22 @@ struct PrismWindow::Impl : QObject {
   std::unique_ptr<AboutDialog> aboutDialog;
   std::unique_ptr<FileOpsDialog> fileDialog;
   std::unique_ptr<PhotoPrint> printJob;
+  GtkWidget *smoothToggle = nullptr;
+  bool smoothZoom = PrismSettings::storedSmoothZoom(PrismSettings::appearanceFile());
+  void setSmoothZoom(bool enabled) {
+    smoothZoom = enabled;
+    for (auto *v : {view.get(), compareView.get()})
+      if (v)
+        v->setSmoothZoom(enabled);
+    if (smoothToggle && gtk_check_button_get_active(GTK_CHECK_BUTTON(smoothToggle)) != enabled) {
+      syncingUi = true;
+      gtk_check_button_set_active(GTK_CHECK_BUTTON(smoothToggle), enabled);
+      syncingUi = false;
+    }
+    PrismSettings::saveSmoothZoom(PrismSettings::appearanceFile(), enabled);
+    setStatus(enabled ? "Wygładzanie pikseli w powiększeniu: włączone."
+                      : "Ostre piksele w powiększeniu (domyślne).");
+  }
   GtkWidget *photoMenu = nullptr, *menuCopy = nullptr, *menuExport = nullptr,
             *menuPrint = nullptr, *menuHeart = nullptr;
   std::unique_ptr<UsbAccess> usb;
@@ -1226,14 +1242,32 @@ struct PrismWindow::Impl : QObject {
     gtk_box_append(GTK_BOX(box), note);
     auto *row = Gx::hbox(8);
     gtk_box_append(GTK_BOX(row), expander());
-    gtk_box_append(GTK_BOX(row), Ui::button({}, "Domyślne", {}, [this] {
+    auto *defaults = Ui::button({}, "Domyślne", {}, [this] {
                      setOpacity(PrismSettings::defaultOpacity(
                                     Theme::compositorBlurs()),
                                 false);
-                   }));
+                   });
+    gtk_box_append(GTK_BOX(row), defaults);
     gtk_box_append(GTK_BOX(row), Ui::button({}, "W pełni kryjący", {},
                                             [this] { setOpacity(100, false); }));
     gtk_box_append(GTK_BOX(box), row);
+    // Photo magnification: sharp pixels by default, smoothing on request.
+    gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+    gtk_box_append(GTK_BOX(box), Ui::label("Powiększenie zdjęcia", "prism-title"));
+    smoothToggle = gtk_check_button_new();
+    gtk_check_button_set_child(GTK_CHECK_BUTTON(smoothToggle),
+                               Ui::label("Wygładzaj piksele w powiększeniu"));
+    gtk_check_button_set_active(GTK_CHECK_BUTTON(smoothToggle), smoothZoom);
+    Gx::on(smoothToggle, "toggled", [this] {
+      if (!syncingUi)
+        setSmoothZoom(gtk_check_button_get_active(GTK_CHECK_BUTTON(smoothToggle)));
+    });
+    gtk_box_append(GTK_BOX(box), smoothToggle);
+    gtk_box_append(GTK_BOX(box),
+                   Ui::label("Wyłączone (domyślnie): od 100 % każdy piksel zdjęcia jest\n"
+                             "ostrym kwadratem. Włączone: przejścia między pikselami\n"
+                             "są wygładzane. Same piksele zdjęcia się nie zmieniają.",
+                             "prism-dim"));
     gtk_popover_set_child(GTK_POPOVER(opacityPopover), box);
     return opacityPopover;
   }
@@ -1283,8 +1317,8 @@ struct PrismWindow::Impl : QObject {
                               Icons::create("opacity"));
     gtk_menu_button_set_popover(GTK_MENU_BUTTON(opacityButton),
                                 buildOpacityPopover());
-    Ui::tip(opacityButton, "Krycie interfejsu • Ctrl+Alt+O");
-    Ui::accessible(opacityButton, "Krycie interfejsu");
+    Ui::tip(opacityButton, "Wygląd: krycie interfejsu i wygładzanie powiększenia • Ctrl+Alt+O");
+    Ui::accessible(opacityButton, "Wygląd: krycie interfejsu i powiększenie");
     gtk_box_append(GTK_BOX(row), opacityButton);
 
     auto control = [&](const QString &symbol, const QString &tip,
@@ -1555,6 +1589,8 @@ struct PrismWindow::Impl : QObject {
     selectedView = view.get();
     attachPhotoMenu(view.get());
     attachPhotoMenu(compareView.get());
+    view->setSmoothZoom(smoothZoom);
+    compareView->setSmoothZoom(smoothZoom);
     primaryPanel = Gx::vbox();
     primaryCaptionBar = captionBar(&primaryCaption, false);
     gtk_widget_set_visible(primaryCaptionBar, FALSE);
@@ -1673,6 +1709,7 @@ struct PrismWindow::Impl : QObject {
     a["copyImage"] = [this] { copyToClipboard(); };
     a["export"] = [this] { exportPhoto(); };
     a["print"] = [this] { startPrint(); };
+    a["smoothZoom"] = [this] { setSmoothZoom(!smoothZoom); };
     a["photoMenu"] = [this] { showPhotoMenuFromKeyboard(); };
     a["duplicates"] = [this] { showFileDialog(true); };
     a["usb"] = [this] { openUsb(); };

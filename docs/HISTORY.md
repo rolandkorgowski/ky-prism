@@ -18,6 +18,11 @@ bez OpenGL stosuje tę samą zasadę, gdy podgląd ma pełną rozdzielczość.
 Test `gtk_ui`: paski czarno-białe co 1 piksel w powiększeniu 8× nie mogą
 dać żadnego odcienia pośredniego. Bez poprawki test się nie udaje.
 
+Dawne wygładzanie jest opcją: w okienku „Wygląd” (`Ctrl+Alt+O`)
+przełącznik „Wygładzaj piksele w powiększeniu”, domyślnie wyłączony.
+Wybór zapisuje się w `~/.config/ky-prism/appearance.json` (`smooth_zoom`)
+obok krycia, a kopie i eksport (`prismctl.py`) go zachowują.
+
 ## 0.13.0 — drukowanie i praca w Claude Code z chmury
 
 **Drukowanie** (`Ctrl+P`, ikona na pasku, menu pod prawym przyciskiem)

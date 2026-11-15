@@ -51,6 +51,11 @@ int main() {
       check(root.value("ui_opacity_percent").isDouble(),
             "stored as an integer number, as the installer validates");
     }
+    // Smooth magnification: off unless saved; saving keeps the opacity.
+    check(!storedSmoothZoom(file), "sharp pixels by default");
+    check(saveSmoothZoom(file, true) && storedSmoothZoom(file), "smoothing saved");
+    check(storedOpacity({}, file) == 100, "opacity kept next to smoothing");
+    check(saveSmoothZoom(file, false) && !storedSmoothZoom(file), "smoothing off again");
     // A symbolic link in place of the file is never followed.
     const QString target = tmp.path() + "/elsewhere.json", link = tmp.path() + "/link/appearance.json";
     check(QDir().mkpath(tmp.path() + "/link"), "link directory");
@@ -61,6 +66,7 @@ int main() {
     }
     check(QFile::link(target, link), "create symlink");
     check(!saveOpacity(link, 50), "symlink is refused");
+    check(!saveSmoothZoom(link, true), "symlink is refused for smoothing too");
     {
       QFile f(target);
       check(f.open(QIODevice::ReadOnly) && f.readAll() == "{}",

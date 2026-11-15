@@ -241,6 +241,26 @@ void scenario(const QString &photos, const QString &config,
       }
     check(sampled > 0 && blended == 0,
           "8× zoom shows each photo pixel as a sharp block (no blended greys)");
+    // The optional smoothing brings the interpolation back, and is saved.
+    // Read what the window shows (the GL area is double-buffered, so the raw
+    // framebuffer may still hold the previous frame).
+    auto blendedNow = [&] {
+      pump(400);
+      const auto again = render(first->widget());
+      int count = 0;
+      for (int x = again.width() / 2 - 100; x < again.width() / 2 + 100; ++x) {
+        const int v = qGray(again.pixel(x, again.height() / 2));
+        if (v > 3 && v < 252)
+          ++count;
+      }
+      return count;
+    };
+    check(window.trigger("smoothZoom") && first->smoothZoom() && blendedNow() > 0,
+          "smoothing option interpolates magnified pixels");
+    check(PrismSettings::storedSmoothZoom(PrismSettings::appearanceFile()),
+          "smoothing option remembered");
+    check(window.trigger("smoothZoom") && !first->smoothZoom() && blendedNow() == 0,
+          "smoothing off: sharp pixels again");
     window.open(photos + "/red.jpg");
     waitFor([&] { return window.currentPhoto().endsWith("red.jpg") && !first->busy(); },
             "red again after stripes");

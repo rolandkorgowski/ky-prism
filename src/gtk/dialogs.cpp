@@ -640,7 +640,7 @@ AboutDialog::AboutDialog(GtkWindow *parent) : d(new Impl) {
       {"Prawy przycisk na zdjęciu / Menu / Shift+F10",
        "Menu: kopiuj, eksportuj, ulubione, EXIF"},
       {"Ctrl+I", "Pokaż / ukryj EXIF"},
-      {"Ctrl+Alt+O", "Krycie interfejsu — suwak przezroczystości oprawy"},
+      {"Ctrl+Alt+O", "Wygląd: krycie interfejsu i wygładzanie pikseli w powiększeniu"},
       {"Ctrl+M", "Maksymalizuj / przywróć okno"},
       {"F11 / Esc", "Pełny ekran / wyjdź z pełnego ekranu"},
       {"Ctrl++ / Ctrl+−", "Przybliż / oddal"},

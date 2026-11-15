@@ -83,6 +83,7 @@ struct PhotoView::Impl : QObject {
     return base ? std::max(1, gtk_widget_get_scale_factor(base)) : 1.0;
   }
   bool valid() const { return glReady && !failed && area; }
+  bool smooth = false; // interpolated magnification (user option)
   void update() {
     if (valid())
       gtk_gl_area_queue_render(GTK_GL_AREA(area));
@@ -434,7 +435,7 @@ struct PhotoView::Impl : QObject {
     // From 1:1 upwards full-resolution tiles are shown as they are: every
     // photo pixel becomes a sharp block (no interpolation between pixels).
     // Zoomed out, and for coarse placeholder layers, filtering stays on.
-    const bool exactPixels = zoom * dpr() >= 1.0 - 1e-9;
+    const bool exactPixels = !smooth && zoom * dpr() >= 1.0 - 1e-9;
     auto draw = [&](Texture &tex, QRectF r, float u0, float v0, float u1,
                     float v1) {
       tex.used = ++clock;
@@ -518,7 +519,8 @@ struct PhotoView::Impl : QObject {
         float(r.x()), float(r.y()), float(r.width()), float(r.height()));
     gtk_snapshot_push_clip(snapshot, &all);
     // Same rule without OpenGL, when the preview holds every photo pixel.
-    const bool exact = cpuPreview.size() == dimensions && zoom * dpr() >= 1.0 - 1e-9;
+    const bool exact =
+        !smooth && cpuPreview.size() == dimensions && zoom * dpr() >= 1.0 - 1e-9;
     gtk_snapshot_append_scaled_texture(
         snapshot, cpuTexture, exact ? GSK_SCALING_FILTER_NEAREST : GSK_SCALING_FILTER_LINEAR,
         &bounds);
@@ -952,6 +954,13 @@ void PhotoView::open(const QString &path, const QString &displayProfile) {
   d->update();
   d->schedule();
 }
+void PhotoView::setSmoothZoom(bool enabled) {
+  if (d->smooth == enabled)
+    return;
+  d->smooth = enabled;
+  d->update();
+}
+bool PhotoView::smoothZoom() const { return d->smooth; }
 void PhotoView::fit() {
   if (d->dimensions.isEmpty() || d->width() <= 0 || d->height() <= 0)
     return;
