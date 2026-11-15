@@ -5,6 +5,10 @@
 //   prism-gtk-test --readme-shot PHOTOS OUT.png  main window for the README
 //   prism-gtk-test --stress ROUNDS  memory growth and main-loop stalls while
 //                    copying a 24 Mpx photo to the clipboard and exporting it
+//   prism-gtk-test --xdotool-drag   real pointer drags from the library on an
+//                    X11 display, driven by xdotool. It moves the display's
+//                    pointer, so it is not part of ctest: run it only on a
+//                    throwaway display (Xvfb in a test machine).
 #include "gtkbase.h"
 #include "dialogs.h"
 #include "document.h"
@@ -28,6 +32,9 @@
 #include <iostream>
 #include <stdexcept>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <csignal>
+#include <dlfcn.h>
 #if defined(__GLIBC__)
 #include <malloc.h>
 #endif
@@ -1242,6 +1249,166 @@ int stress(const QString &work, int rounds) {
 }
 } // namespace
 
+// Runs xdotool while this process keeps handling events: the drag source and
+// the drop target both live here.
+bool xdotool(const QStringList &args) {
+  std::vector<QByteArray> bytes{"xdotool"};
+  for (const auto &a : args)
+    bytes.push_back(a.toUtf8());
+  std::vector<char *> argv;
+  for (auto &b : bytes)
+    argv.push_back(b.data());
+  argv.push_back(nullptr);
+  GPid pid = 0;
+  GError *error = nullptr;
+  if (!g_spawn_async(nullptr, argv.data(), nullptr,
+                     GSpawnFlags(G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD),
+                     nullptr, nullptr, &pid, &error)) {
+    g_clear_error(&error);
+    return false;
+  }
+  int status = 0;
+  QElapsedTimer timer;
+  timer.start();
+  while (waitpid(pid, &status, WNOHANG) == 0) {
+    if (timer.elapsed() > 30000) {
+      kill(pid, SIGKILL);
+      waitpid(pid, &status, 0);
+      return false;
+    }
+    pump(10);
+  }
+  g_spawn_close_pid(pid);
+  return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+// Real pointer drags on X11 (see the header): click, drag to a folder in the
+// list and in the thumbnails, drag onto a photo row, a group drag and the
+// overwrite question, drag onto the photo.
+int xdotoolDrag(const QString &photos) {
+  PrismWindow window;
+  window.show();
+  auto *gtkWindow = window.window();
+  waitFor([&] { return gtk_widget_get_mapped(GTK_WIDGET(gtkWindow)); }, "window mapped");
+  auto *display = gtk_widget_get_display(GTK_WIDGET(gtkWindow));
+  using Xid = unsigned long (*)(GdkSurface *);
+  auto xidOf = reinterpret_cast<Xid>(dlsym(RTLD_DEFAULT, "gdk_x11_surface_get_xid"));
+  if (QString(G_OBJECT_TYPE_NAME(display)) != "GdkX11Display" || !xidOf) {
+    std::cout << "xdotool drag: needs an X11 display, skipped\n";
+    return 77;
+  }
+  const QString wid =
+      QString::number(xidOf(gtk_native_get_surface(GTK_NATIVE(gtkWindow))));
+  pump(500);
+  window.browse(photos);
+  auto *library = window.library();
+  waitFor([&] { return !library->scanning() && library->count() == 5; }, "listed");
+  window.setLibraryMode(false);
+  pump(500);
+  const QString target = photos + "/Cel", red = photos + "/red.jpg",
+                green = photos + "/green.jpg", blue = photos + "/blue.jpg";
+  auto spot = [&](const QString &path) {
+    double rx = 0, ry = 0, sx = 0, sy = 0;
+    waitFor([&] { return dropPoint(window, path, &rx, &ry); }, "row on screen");
+    graphene_point_t in = GRAPHENE_POINT_INIT(float(rx), float(ry)), out;
+    check(gtk_widget_compute_point(content(gtkWindow), GTK_WIDGET(gtkWindow), &in, &out),
+          "row maps to the window");
+    gtk_native_get_surface_transform(GTK_NATIVE(gtkWindow), &sx, &sy);
+    return QPoint(int(out.x + sx), int(out.y + sy));
+  };
+  auto at = [&](QPoint p) {
+    return QStringList{"mousemove", "--window", wid, QString::number(p.x()),
+                       QString::number(p.y())};
+  };
+  auto drag = [&](QPoint from, QPoint to) {
+    QStringList args = at(from);
+    args << "sleep" << "0.3" << "mousedown" << "1" << "sleep" << "0.2";
+    for (int step = 1; step <= 6; ++step)
+      args << at(from + QPoint(0, 4 * step)) << "sleep" << "0.05";
+    args << at(to) << "sleep" << "0.4" << at(to + QPoint(3, 1)) << "sleep" << "0.4"
+         << "mouseup" << "1";
+    check(xdotool(args), "xdotool drag ran");
+    pump(600);
+  };
+  auto click = [&](QPoint p, bool control = false) {
+    QStringList args = at(p);
+    args << "sleep" << "0.2";
+    if (control)
+      args << "keydown" << "ctrl";
+    args << "click" << "1";
+    if (control)
+      args << "keyup" << "ctrl";
+    check(xdotool(args), "xdotool click ran");
+    pump(400);
+  };
+  auto copied = [&](const QString &status) {
+    waitFor([&] { return !window.copyingToFolder() && window.statusText() == status; },
+            "copy status");
+  };
+
+  click(spot(green));
+  waitFor([&] { return window.currentPhoto() == green; }, "a plain click opens the photo");
+  std::cout << "xdotool drag: click opens a photo\n";
+
+  drag(spot(red), spot(target));
+  copied("Skopiowano do „Cel”: 1 nowy plik.");
+  check(bytesOf(target + "/red.jpg") == bytesOf(red), "dragged copy is byte-identical");
+  check(window.currentPhoto() == green, "the drag did not open the dragged photo");
+  std::cout << "xdotool drag: list row onto a folder copies\n";
+
+  drag(spot(red), spot(blue));
+  pump(800);
+  check(window.currentPhoto() == green && !dialogOf(gtkWindow) &&
+            QDir(target).entryList(QDir::Files).size() == 1,
+        "a drop on a photo row does nothing");
+  std::cout << "xdotool drag: drop on a photo row is refused\n";
+
+  solid(target + "/green.jpg", 32, 32, {1, 2, 3});
+  const QByteArray kept = bytesOf(target + "/green.jpg");
+  library->selectRows({});
+  click(spot(red), true);
+  click(spot(green), true);
+  check(library->selectedFiles().size() == 2, "Ctrl+click selects two photos");
+  drag(spot(green), spot(target));
+  waitFor([&] { return dialogOf(gtkWindow) != nullptr; }, "overwrite question");
+  QString details;
+  std::function<void(GtkWidget *)> collect = [&](GtkWidget *w) {
+    if (GTK_IS_LABEL(w))
+      details += QString::fromUtf8(gtk_label_get_text(GTK_LABEL(w))) + "\n";
+    for (auto *c = gtk_widget_get_first_child(w); c; c = gtk_widget_get_next_sibling(c))
+      collect(c);
+  };
+  collect(GTK_WIDGET(dialogOf(gtkWindow)));
+  check(details.contains("green.jpg — w folderze") &&
+            details.contains("red.jpg — identyczna zawartość"),
+        "the group drag carried both photos");
+  check(press(dialogOf(gtkWindow), "Anuluj"), "cancel");
+  check(bytesOf(target + "/green.jpg") == kept, "Anuluj keeps the file");
+  std::cout << "xdotool drag: group drag asks before overwriting\n";
+
+  window.setLibraryMode(true);
+  pump(800);
+  library->selectRows({});
+  drag(spot(blue), spot(target));
+  copied("Skopiowano do „Cel”: 1 nowy plik.");
+  check(bytesOf(target + "/blue.jpg") == bytesOf(blue), "thumbnail drag copies");
+  std::cout << "xdotool drag: thumbnail onto a folder copies\n";
+
+  graphene_rect_t b;
+  double sx = 0, sy = 0;
+  check(gtk_widget_compute_bounds(window.primaryView()->widget(), GTK_WIDGET(gtkWindow), &b),
+        "photo bounds");
+  gtk_native_get_surface_transform(GTK_NATIVE(gtkWindow), &sx, &sy);
+  drag(spot(blue), QPoint(int(b.origin.x + b.size.width / 2 + sx),
+                          int(b.origin.y + b.size.height / 2 + sy)));
+  waitFor([&] { return window.currentPhoto() == blue; }, "drop on the photo opens it");
+  std::cout << "xdotool drag: drop on the photo opens it\n";
+  check(noTemporaries(target), "no temporary files");
+  window.close();
+  pump(200);
+  std::cout << "xdotool drag: ok\n";
+  return 0;
+}
+
 int main(int argc, char **argv) {
   // Never touch the user's own preferences, favourites or caches.
   QTemporaryDir home;
@@ -1267,6 +1434,10 @@ int main(int argc, char **argv) {
     qputenv("GSK_RENDERER", "gl");
   QString readmePhotos, readmeOut;
   int stressRounds = 0;
+  bool pointerDrags = false;
+  for (int i = 1; i < argc; ++i)
+    if (QString(argv[i]) == "--xdotool-drag")
+      pointerDrags = true;
   for (int i = 1; i + 1 < argc; ++i)
     if (QString(argv[i]) == "--stress")
       stressRounds = std::max(1, QString(argv[i + 1]).toInt());
@@ -1297,6 +1468,22 @@ int main(int argc, char **argv) {
       PrismLanguage::initialize();
       Theme::install();
       result = stress(home.path() + "/work", stressRounds);
+      Theme::shutdown();
+      NvjpegBackend::shutdown();
+      Document::clearSharedPreviews();
+      vips_shutdown();
+      return result;
+    }
+    if (pointerDrags) {
+      PrismLanguage::initialize();
+      Theme::install();
+      const QString photos = home.path() + "/photos";
+      QDir().mkpath(photos + "/Cel");
+      solid(photos + "/red.jpg", 640, 480, {200, 40, 30});
+      solid(photos + "/green.jpg", 640, 480, {30, 160, 60});
+      solid(photos + "/blue.jpg", 320, 200, {20, 60, 190});
+      solid(photos + "/IMG_2.jpg", 800, 600, {120, 120, 120});
+      result = xdotoolDrag(photos);
       Theme::shutdown();
       NvjpegBackend::shutdown();
       Document::clearSharedPreviews();
