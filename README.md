@@ -55,14 +55,24 @@ cd ky-prism
 On Omarchy the installer also adds the ky-prism buttons to the top bar and
 a Hyprland window rule.
 
-### FreeBSD
+### FreeBSD and OpenBSD
 
-As root, once: install Python and sudo, then allow the `wheel` group in
-sudo (uncomment `%wheel ALL=(ALL:ALL) ALL` with `visudo`). Your account must
-be in `wheel`.
+Root is needed only once, to install the system packages: on BSD only root
+may install them. ky-prism itself is installed under your own account, in
+`~/.local`, without root.
+
+As root, install everything at once:
+
+FreeBSD:
 
 ```sh
-pkg install -y git python3 sudo
+pkg install -y git cmake pkgconf python3 qt6-base gtk4 libepoxy vips libraw lcms2 jpeg-turbo libglvnd mesa-libs desktop-file-utils xdg-utils
+```
+
+OpenBSD:
+
+```sh
+pkg_add git cmake python%3 qt6-qtbase gtk+4 libvips libraw lcms2 jpeg desktop-file-utils xdg-utils
 ```
 
 Then as your user:
@@ -73,25 +83,13 @@ cd ky-prism
 ./run.sh install
 ```
 
-### OpenBSD
-
-As root, once:
-
-```sh
-pkg_add git python%3
-```
-
-```sh
-echo 'permit persist :wheel' > /etc/doas.conf
-```
-
-Then as your user (in the `wheel` group):
-
-```sh
-git clone https://github.com/rolandkorgowski/ky-prism.git
-cd ky-prism
-./run.sh install
-```
+With all packages present, `./run.sh install` needs no root at all.
+Alternatively, install only Git and Python as root and let
+`./run.sh install` fetch the rest. It then asks for your password through
+`sudo` (FreeBSD: `pkg install sudo`, then with `visudo` uncomment
+`%wheel ALL=(ALL:ALL) ALL`) or `doas` (OpenBSD: append, do not overwrite,
+`permit persist :wheel` to `/etc/doas.conf`). Your account must be in the
+`wheel` group.
 
 On FreeBSD and OpenBSD, if the `ky-prism` command is not found in a
 terminal, add `export PATH="$HOME/.local/bin:$PATH"` to `~/.profile`. The

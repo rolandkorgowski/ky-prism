@@ -18,11 +18,21 @@ Potrzebny jest tylko Python 3. Resztę `./run.sh install` dobierze sam.
 | Ubuntu 24.04 / 26.04, Debian, Mint | `sudo apt install git python3` |
 | Arch, Omarchy, Manjaro, EndeavourOS | `sudo pacman -Syu --needed git python` |
 | Fedora | `sudo dnf install git python3` |
-| FreeBSD (jako root) | `pkg install -y git python3 sudo`, potem `visudo` i odkomentuj `%wheel ALL=(ALL:ALL) ALL` |
-| OpenBSD (jako root) | `pkg_add git python%3` oraz `echo 'permit persist :wheel' > /etc/doas.conf` |
+| FreeBSD (jako root) | `pkg install -y git cmake pkgconf python3 qt6-base gtk4 libepoxy vips libraw lcms2 jpeg-turbo libglvnd mesa-libs desktop-file-utils xdg-utils` |
+| OpenBSD (jako root) | `pkg_add git cmake python%3 qt6-qtbase gtk+4 libvips libraw lcms2 jpeg desktop-file-utils xdg-utils` |
 
-Na FreeBSD i OpenBSD konto użytkownika musi należeć do grupy `wheel`.
-Pakiety instaluje się przez `sudo` (FreeBSD) lub `doas` (OpenBSD).
+**Po co root na BSD.** Na FreeBSD i OpenBSD pakiety systemowe może
+instalować tylko root. Sam ky-prism trafia na konto użytkownika (`~/.local`)
+i root nie jest do tego potrzebny. Gdy root zainstaluje od razu wszystkie
+pakiety z tabeli, `./run.sh install` nie prosi już o żadne uprawnienia.
+
+**Wariant z uprawnieniami.** Root instaluje tylko `git` i Pythona, a resztę
+`./run.sh install` dobiera sam, pytając o hasło:
+- FreeBSD: `pkg install sudo`, potem w `visudo` odkomentuj
+  `%wheel ALL=(ALL:ALL) ALL`.
+- OpenBSD: **dopisz** regułę do `doas.conf`, nie nadpisuj pliku:
+  `grep -qx 'permit persist :wheel' /etc/doas.conf || echo 'permit persist :wheel' >> /etc/doas.conf`.
+- Konto użytkownika musi należeć do grupy `wheel`.
 Program działa w sesji graficznej X11 albo Wayland z OpenGL.
 
 ## 2. Instalacja z GitHuba

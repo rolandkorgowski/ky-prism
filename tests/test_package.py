@@ -154,6 +154,15 @@ class NewIntegration(unittest.TestCase):
     command=module.plan();self.assertEqual(command[0],expected)
     self.assertIn('udisks2',command)
     self.assertFalse(any('curl' in item or 'upgrade' in item for item in command))
+  # The one-line root commands in the guides list every package the
+  # installer would fetch, so ./run.sh install then needs no privileges.
+  spec2=importlib.util.spec_from_file_location('prism_ctl_text',ROOT/'prismctl.py');ctl=importlib.util.module_from_spec(spec2);spec2.loader.exec_module(ctl)
+  guides={'README.md':(ROOT/'README.md').read_text(),'docs/INSTALACJA.md':(ROOT/'docs/INSTALACJA.md').read_text(),'INSTALACJA.txt':ctl.install_text('x.tar.gz','x',False)}
+  for kind,command in [('freebsd','pkg install -y git '),('openbsd','pkg_add git ')]:
+   expected_line=command+' '.join(module.plan(kind)[2 if kind=='freebsd' else 1:])
+   for name,text in guides.items():
+    with self.subTest(guide=name,system=kind):self.assertIn(expected_line,text)
+   self.assertNotIn("> /etc/doas.conf\n",'\n'.join(guides.values()).replace('>> /etc/doas.conf',''))
   for system,expected in [('FreeBSD','pkg'),('OpenBSD','pkg_add')]:
    with self.subTest(system=system),patch.object(module.platform,'system',return_value=system):
     command=module.plan();self.assertEqual(command[0],expected)
