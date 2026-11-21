@@ -156,6 +156,12 @@ struct PrismWindow::Impl : QObject {
   // being scanned now.
   QString siblingsDirectory, scanningDirectory;
   QStringList siblings;
+  // ←/→ pressed while the folder is still being listed, or on a photo the
+  // list does not know yet (added after the listing): the step waits for
+  // the listing. `relisted` is the photo last relisted for, so a photo that
+  // never appears in the list costs one extra listing, not one per key.
+  int pendingStep = 0;
+  QString pendingStepFrom, relisted;
   QList<TabState> tabStates;
   BrowserHistory history;
   QThreadPool storagePool, scanPool, clipboardPool, exportPool;
@@ -379,8 +385,9 @@ struct PrismWindow::Impl : QObject {
   }
 
   // ------------------------------------------------------------- photos ---
-  // focusPhoto: requests that did not come from the library list (chooser,
-  // drop, favourites, command line) hand the keyboard to the photograph.
+  // focusPhoto: the chooser, a drop, favourites, the command line and a mouse
+  // click on a file in the library hand the keyboard to the photograph;
+  // Enter in the library list keeps it in the list.
   void open(const QString &name, bool focusPhoto = false) {
     if (isShuttingDown)
       return;
@@ -446,7 +453,7 @@ struct PrismWindow::Impl : QObject {
       return;
     const bool startingPair = !gtk_widget_get_visible(comparePanel) ||
                               !gtk_widget_get_visible(primaryPanel);
-    comparedPath = QFileInfo(name).absoluteFilePath();
+    comparedPath = QDir::cleanPath(QFileInfo(name).absoluteFilePath());
     gtk_label_set_text(GTK_LABEL(compareCaption),
                        Gx::u8(QFileInfo(name).fileName()).constData());
     gtk_widget_set_tooltip_text(compareCaption, Gx::u8(comparedPath).constData());
@@ -521,9 +528,24 @@ struct PrismWindow::Impl : QObject {
     }
   }
   void navigate(int delta) {
-    const int i = siblings.indexOf(activePhoto());
-    if (i < 0 || delta == 0)
+    const QString current = activePhoto();
+    const int i = siblings.indexOf(current);
+    if (delta == 0 || current.isEmpty())
       return;
+    if (i < 0) {
+      if (!QFileInfo(current).isFile())
+        return;
+      pendingStep = delta;
+      pendingStepFrom = current;
+      if (!scanInFlight && relisted != current) {
+        relisted = current;
+        scanDirectory.clear();
+        scanSiblings();
+      }
+      if (!scanInFlight)
+        pendingStep = 0;
+      return;
+    }
     // A photo moved to the trash (or removed elsewhere) is passed over.
     for (int j = i + delta; j >= 0 && j < siblings.size(); j += delta) {
       const auto next = siblings.at(j);
@@ -1640,7 +1662,10 @@ struct PrismWindow::Impl : QObject {
     gtk_box_append(GTK_BOX(sidebar), libraryPane->widget());
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(sortButtons.front()), TRUE);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(listMode), TRUE);
-    libraryPane->fileClicked = [this](const QString &name) { open(name); };
+    // A mouse click on a file hands the keyboard to the photo, so ←/→ go to
+    // the neighbours at once (the list itself swallows ←/→). Enter keeps
+    // the keyboard in the list.
+    libraryPane->fileClicked = [this](const QString &name) { open(name, true); };
     libraryPane->deleteRequested = [this] { trashSelection(); };
     libraryPane->menuRequested = [this](double x, double y) {
       showLibraryMenu(x, y);
@@ -2122,6 +2147,15 @@ struct PrismWindow::Impl : QObject {
                            QFileInfo(activePhoto()).absolutePath() !=
                                scanDirectory)
                          scanSiblings();
+                       if (scanInFlight)
+                         return;
+                       // A step pressed during the listing, for the photo
+                       // still shown.
+                       const int step = pendingStep;
+                       pendingStep = 0;
+                       if (step && pendingStepFrom == activePhoto() &&
+                           siblings.contains(activePhoto()))
+                         navigate(step);
                      });
   }
   void build() {

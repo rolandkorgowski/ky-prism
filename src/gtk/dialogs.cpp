@@ -652,7 +652,8 @@ AboutDialog::AboutDialog(GtkWindow *parent) : d(new Impl) {
       {"Ctrl++ / Ctrl+−", "Przybliż / oddal"},
       {"Ctrl+0 / Ctrl+1", "Dopasuj widok / oryginalne 1:1"},
       {"← / → lub PageUp / PageDown",
-       "Poprzednie / następne zdjęcie (fokus na zdjęciu)"},
+       "Poprzednie / następne zdjęcie (fokus na zdjęciu, np. po kliknięciu "
+       "pliku w bibliotece)"},
       {"F / 1 / + / −", "Dopasuj / 1:1 / zoom (fokus na zdjęciu)"},
       {"Shift+strzałki",
        "Przesuwaj zdjęcie; z Ctrl: większy krok (fokus na zdjęciu)"},

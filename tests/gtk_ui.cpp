@@ -515,6 +515,61 @@ void scenario(const QString &photos, const QString &config,
           "previous photo");
   waitFor([&] { return !first->busy(); }, "idle after navigation");
 
+  // --- arrows in another folder, after a mouse click on a file in the
+  // library: the photo takes the keyboard (the list would swallow ←/→) and
+  // the neighbours come from the new folder ---
+  {
+    const QString other = work + "/strzalki";
+    QDir().mkpath(other);
+    for (const char *name : {"s1.jpg", "s2.jpg", "s3.jpg"})
+      solid(other + "/" + name, 48, 32, {40, 120, 200});
+    window.browse(other);
+    waitFor([&] { return !library->scanning() && library->count() == 3; },
+            "another folder listed");
+    // A real click puts the keyboard in the list first.
+    auto *list = library->focusWidget();
+    gtk_widget_grab_focus(list);
+    auto *focus = gtk_window_get_focus(gtkWindow);
+    check(focus && (focus == list || gtk_widget_is_ancestor(focus, list)),
+          "the list has the keyboard before the click");
+    library->fileClicked(other + "/s2.jpg");
+    waitFor([&] { return window.currentPhoto().endsWith("strzalki/s2.jpg") && !first->busy(); },
+            "photo clicked in another folder");
+    auto *canvas = first->focusWidget();
+    const bool photoFocused = gtk_window_get_focus(gtkWindow) == canvas;
+    check(keyShortcut(canvas, GDK_KEY_Right, true), "→ on the photo");
+    waitFor([&] { return window.currentPhoto().endsWith("strzalki/s3.jpg"); },
+            "→ opens the next photo of the new folder");
+    check(keyShortcut(canvas, GDK_KEY_Left, true), "← on the photo");
+    waitFor([&] { return window.currentPhoto().endsWith("strzalki/s2.jpg"); },
+            "← opens the previous photo of the new folder");
+    check(photoFocused, "a click on a file in the library hands the arrows to the photo");
+    // A photo added after the folder was listed: the first ← relists the
+    // folder and then steps.
+    solid(other + "/s4.jpg", 48, 32, {40, 120, 200});
+    library->fileClicked(other + "/s4.jpg");
+    waitFor([&] { return window.currentPhoto().endsWith("strzalki/s4.jpg") && !first->busy(); },
+            "photo added after the listing opened");
+    check(keyShortcut(canvas, GDK_KEY_Left, true), "← on the added photo");
+    waitFor([&] { return window.currentPhoto().endsWith("strzalki/s3.jpg"); },
+            "← from a photo added after the listing");
+    // Enter in the list opens the file and keeps the keyboard in the list.
+    library->refresh();
+    waitFor([&] { return !library->scanning() && library->count() == 4; },
+            "added photo listed");
+    gtk_widget_grab_focus(list);
+    check(library->activateRow(int(library->names().indexOf("s1.jpg"))),
+          "Enter on s1.jpg");
+    waitFor([&] { return window.currentPhoto().endsWith("strzalki/s1.jpg") && !first->busy(); },
+            "Enter opens the photo");
+    focus = gtk_window_get_focus(gtkWindow);
+    check(focus && (focus == list || gtk_widget_is_ancestor(focus, list)),
+          "Enter keeps the keyboard in the list");
+    window.open(photos + "/green.jpg");
+    waitFor([&] { return window.currentPhoto().endsWith("green.jpg") && !first->busy(); },
+            "photo restored after the arrow checks");
+  }
+
   // --- panels ---
   window.trigger("exif");
   check(window.exifVisible(), "EXIF panel shown");

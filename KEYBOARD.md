@@ -48,7 +48,9 @@ Gdy fokus jest **na zdjęciu**:
 | Ctrl+Shift+strzałki | Przesuń widok o 256 pikseli logicznych |
 | Delete | Przenieś wyświetlone zdjęcie do kosza (zawsze po potwierdzeniu) |
 
-W lewej liście strzałki wybierają pozycję, a Enter otwiera plik lub katalog.
+W lewej liście strzałki wybierają pozycję, a Enter otwiera plik lub katalog
+(fokus zostaje w liście). Kliknięcie pliku myszą otwiera zdjęcie i przenosi
+na nie fokus, więc ← / → od razu przełączają zdjęcia z jego folderu.
 F6 przenosi fokus z listy do ścieżki i dalej do zdjęcia (lub widocznego EXIF).
 W polach tekstowych działają zwykłe skróty edycji, m.in. Ctrl+A/C/V/X/Z.
 Ctrl+C w polu tekstowym lub w zaznaczonym tekście kopiuje ten tekst; poza nimi

@@ -64,6 +64,7 @@ inline const QHash<QString,QString> &prismEnglishCatalog() {
     {QString::fromUtf8("Pełny ekran / wyjdź z pełnego ekranu"),QString::fromUtf8("Full screen / leave full screen")},
     {QString::fromUtf8("Przybliż / oddal"),QString::fromUtf8("Zoom in / out")},
     {QString::fromUtf8("Poprzednie / następne zdjęcie (fokus na zdjęciu)"),QString::fromUtf8("Previous / next photo (photo focused)")},
+    {QString::fromUtf8("Poprzednie / następne zdjęcie (fokus na zdjęciu, np. po kliknięciu pliku w bibliotece)"),QString::fromUtf8("Previous / next photo (photo focused, e.g. after clicking a file in the library)")},
     {QString::fromUtf8("Dopasuj / 1:1 / zoom (fokus na zdjęciu)"),QString::fromUtf8("Fit / 1:1 / zoom (photo focused)")},
     {QString::fromUtf8("Shift+strzałki"),QString::fromUtf8("Shift+arrow keys")},
     {QString::fromUtf8("Przesuwaj zdjęcie; z Ctrl: większy krok (fokus na zdjęciu)"),QString::fromUtf8("Pan photo; hold Ctrl for larger steps (photo focused)")},

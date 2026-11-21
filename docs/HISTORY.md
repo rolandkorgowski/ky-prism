@@ -3,6 +3,29 @@
 Raporty `reports/…` wymienione niżej są lokalnymi logami z testów i nie są publikowane w repozytorium.
 
 
+## Po 0.14.0 — strzałki po kliknięciu pliku w bibliotece
+
+Objaw: po przejściu do innego folderu i kliknięciu zdjęcia w lewej liście
+← / → nie przełączały zdjęć. Przyczyną nie była zmiana folderu, tylko fokus.
+Kliknięcie w bibliotece otwierało zdjęcie, ale klawiatura zostawała w liście.
+Strzałki są przypięte do zdjęcia, a lista GTK sama zużywa ← / →
+(`gtk_list_base_move_cursor` zawsze zwraca TRUE). W pierwszym folderze działało,
+bo zdjęcie otwarte z menedżera plików dostaje fokus. Po kliknięciu w zdjęcie
+strzałki wracały, stąd „czasami”.
+
+- Kliknięcie pliku myszą w bibliotece (lista i miniatury) otwiera zdjęcie
+  i przenosi na nie fokus. Enter w liście nadal zostawia fokus w liście, więc
+  ↑ / ↓ i Enter dalej przeglądają listę z klawiatury.
+- ← / → naciśnięte, gdy folder jest jeszcze wczytywany, czeka na listę i wtedy
+  przełącza zdjęcie. Wcześniej takie naciśnięcie przepadało.
+- Zdjęcie dodane do folderu po jego wczytaniu (np. kopia lub eksport) nie było
+  na liście sąsiadów, więc strzałki na nim nie działały. Teraz pierwsza
+  strzałka wczytuje folder ponownie i przełącza zdjęcie.
+- Test okna `gtk_ui`: zmiana folderu, kliknięcie pliku przy fokusie w liście,
+  ← / →, zdjęcie dodane po wczytaniu folderu i Enter w liście.
+- Bez sprawdzenia: prawdziwe kliknięcie myszą i naciśnięcie klawisza (test
+  wywołuje obsługę kliknięcia i skrót bezpośrednio).
+
 ## 0.14.0 — przenoszenie do kosza (Delete)
 
 Drugi wyjątek od zasady „program nie zmienia plików użytkownika”. Delete
