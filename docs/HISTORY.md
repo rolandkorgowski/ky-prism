@@ -3,7 +3,7 @@
 Raporty `reports/…` wymienione niżej są lokalnymi logami z testów i nie są publikowane w repozytorium.
 
 
-## 0.13.0 — przenoszenie do kosza (Delete)
+## 0.14.0 — przenoszenie do kosza (Delete)
 
 Drugi wyjątek od zasady „program nie zmienia plików użytkownika”. Delete
 przenosi pliki do **kosza systemowego**, zawsze po potwierdzeniu. Nic nie

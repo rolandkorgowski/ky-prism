@@ -152,3 +152,7 @@ Alt+Z zapisuje, Esc/Ctrl+W zamyka lub anuluje trwające zadanie.
 W oknie „Załaduj zdjęcie”: Alt+↑ katalog nadrzędny, Ctrl+L ścieżka, Enter
 otwiera zaznaczone zdjęcie lub wchodzi do katalogu, Esc anuluje. Alt+litera
 uruchamia przycisk z podkreśloną literą także w dialogach GTK.
+
+0.14: Delete przenosi do kosza zaznaczone pliki biblioteki albo wyświetlone
+zdjęcie, zawsze po potwierdzeniu (domyślnie Anuluj). Prawy przycisk na pliku
+w bibliotece otwiera menu z tą samą czynnością.
