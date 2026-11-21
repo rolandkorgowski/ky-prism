@@ -31,6 +31,7 @@
 #include <QRegularExpression>
 #include <QStorageInfo>
 #include <QThreadPool>
+#include <QDeadlineTimer>
 #include <QTimer>
 #include <QtConcurrent>
 #include <cmath>
@@ -71,6 +72,12 @@ struct DropCheck {
   bool cancelled = false;
 };
 enum class DropSpot { None, Open, Compare, Folder };
+// Files examined for the trash (Delete) before the confirmation.
+struct TrashCheck {
+  QList<TrashItem> items;
+  QString error;
+  bool cancelled = false;
+};
 // Larger photographs are downscaled for the clipboard: 50 Mpx is about
 // 200 MB of pixels in the applications that receive it.
 constexpr qint64 clipboardPixels = 50'000'000;
@@ -132,7 +139,8 @@ struct PrismWindow::Impl : QObject {
                       : "Ostre piksele w powiększeniu (domyślne).");
   }
   GtkWidget *photoMenu = nullptr, *menuCopy = nullptr, *menuExport = nullptr,
-            *menuPrint = nullptr, *menuHeart = nullptr;
+            *menuPrint = nullptr, *menuHeart = nullptr, *menuTrash = nullptr,
+            *libraryMenu = nullptr;
   std::unique_ptr<UsbAccess> usb;
   QMap<QString, Gx::Callback> actionMap;
 
@@ -144,6 +152,9 @@ struct PrismWindow::Impl : QObject {
   int activeTabIndex = 0, sortColumn = 0;
   QString path, profile, comparedPath, leftMetadata, rightMetadata,
       storageDirectory, scanDirectory, prefetchSignature;
+  // Folder whose files `siblings` lists (the last finished scan), and the one
+  // being scanned now.
+  QString siblingsDirectory, scanningDirectory;
   QStringList siblings;
   QList<TabState> tabStates;
   BrowserHistory history;
@@ -163,6 +174,19 @@ struct PrismWindow::Impl : QObject {
       std::make_shared<std::atomic_bool>(true);
   QString dropFolder, dropSkipped; // dropSkipped: why files were left out
   bool dropAsking = false;
+  // Delete: examine, confirm, move to the system trash. Runs on dropPool, so
+  // only one file operation (copy into a folder or trash) runs at a time.
+  QFutureWatcher<TrashCheck> trashCheck;
+  QFutureWatcher<TrashReport> trashJob;
+  std::shared_ptr<std::atomic_bool> trashCancel =
+      std::make_shared<std::atomic_bool>(true);
+  QString trashFolder, trashNext, trashNextCompared;
+  // The trash report, shown again while the photo that took the place of a
+  // trashed one loads (its "Gotowe" statuses would hide the report).
+  QString trashNotice;
+  QDeadlineTimer trashNoticeUntil;
+  int trashFolders = 0, trashBlocked = 0;
+  bool trashAsking = false;
   std::shared_ptr<std::atomic_bool> scanCancelled =
       std::make_shared<std::atomic_bool>(false);
   QFutureWatcher<QString> storageWatcher;
@@ -360,6 +384,7 @@ struct PrismWindow::Impl : QObject {
   void open(const QString &name, bool focusPhoto = false) {
     if (isShuttingDown)
       return;
+    trashNotice.clear();
     if (!validLocalPath(name)) {
       setStatus("Nieprawidłowa lub zbyt długa ścieżka.");
       return;
@@ -416,6 +441,7 @@ struct PrismWindow::Impl : QObject {
   void showComparison(const QString &name) {
     if (isShuttingDown)
       return;
+    trashNotice.clear();
     if (!validLocalPath(name) || !QFileInfo(name).isFile())
       return;
     const bool startingPair = !gtk_widget_get_visible(comparePanel) ||
@@ -496,12 +522,18 @@ struct PrismWindow::Impl : QObject {
   }
   void navigate(int delta) {
     const int i = siblings.indexOf(activePhoto());
-    if (i >= 0 && i + delta >= 0 && i + delta < siblings.size()) {
-      const auto next = siblings.at(i + delta);
+    if (i < 0 || delta == 0)
+      return;
+    // A photo moved to the trash (or removed elsewhere) is passed over.
+    for (int j = i + delta; j >= 0 && j < siblings.size(); j += delta) {
+      const auto next = siblings.at(j);
+      if (!QFileInfo(next).isFile())
+        continue;
       if (activeView() == compareView.get())
         showComparison(next);
       else
         open(next);
+      return;
     }
   }
   void viewFocused(PhotoView *target) {
@@ -658,6 +690,7 @@ struct PrismWindow::Impl : QObject {
     if (scanInFlight || dir == scanDirectory)
       return;
     scanDirectory = dir;
+    scanningDirectory = dir;
     siblings.clear();
     scanInFlight = true;
     const auto cancelled = scanCancelled;
@@ -994,8 +1027,46 @@ struct PrismWindow::Impl : QObject {
     menuHeart = item("heart", "Dodaj do ulubionych", "Ctrl+Shift+H", "heart");
     item("exif", "Informacje EXIF", "Ctrl+I", "exif");
     item("fullscreen", "Pełny ekran", "F11", "fullscreen");
+    gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+    menuTrash = item("trash", "Przenieś do kosza…", "Delete", "trashPhoto");
     gtk_popover_set_child(GTK_POPOVER(photoMenu), box);
     gtk_widget_set_parent(photoMenu, root);
+  }
+  // Right-click menu on a file of the library: acts on the selection.
+  void buildLibraryMenu() {
+    libraryMenu = gtk_popover_new();
+    Gx::addClass(libraryMenu, "prism-popover");
+    Gx::addClass(libraryMenu, "prism-menu");
+    gtk_popover_set_has_arrow(GTK_POPOVER(libraryMenu), FALSE);
+    gtk_popover_set_position(GTK_POPOVER(libraryMenu), GTK_POS_BOTTOM);
+    gtk_widget_set_halign(libraryMenu, GTK_ALIGN_START);
+    auto *box = Gx::vbox(2);
+    auto *button = Ui::button("trash", "Przenieś do kosza…", "Delete", [this] {
+      gtk_popover_popdown(GTK_POPOVER(libraryMenu));
+      Gx::later([this, live = alive] {
+        if (*live && !isShuttingDown)
+          q->trigger("trashSelection");
+      });
+    });
+    Gx::addClass(button, "flat");
+    if (auto *child = gtk_button_get_child(GTK_BUTTON(button)))
+      gtk_widget_set_halign(child, GTK_ALIGN_START);
+    gtk_box_append(GTK_BOX(box), button);
+    gtk_popover_set_child(GTK_POPOVER(libraryMenu), box);
+    gtk_widget_set_parent(libraryMenu, root);
+  }
+  // (x, y) in the coordinates of the library's visible view.
+  void showLibraryMenu(double x, double y) {
+    if (isShuttingDown || !libraryMenu || !libraryPane)
+      return;
+    graphene_point_t point;
+    const graphene_point_t local = Gx::point(float(x), float(y));
+    if (!gtk_widget_compute_point(libraryPane->focusWidget(), root, &local,
+                                  &point))
+      return;
+    const GdkRectangle at{int(point.x), int(point.y), 1, 1};
+    gtk_popover_set_pointing_to(GTK_POPOVER(libraryMenu), &at);
+    gtk_popover_popup(GTK_POPOVER(libraryMenu));
   }
   void showPhotoMenu(PhotoView *target, double x, double y) {
     if (isShuttingDown || !photoMenu)
@@ -1006,6 +1077,7 @@ struct PrismWindow::Impl : QObject {
     gtk_widget_set_sensitive(menuExport, photo);
     gtk_widget_set_sensitive(menuPrint, photo);
     gtk_widget_set_sensitive(menuHeart, photo && !favorites->busy());
+    gtk_widget_set_sensitive(menuTrash, photo);
     Ui::text(Ui::buttonLabel(menuHeart), heartIsSelected ? "Usuń z ulubionych"
                                                          : "Dodaj do ulubionych");
     graphene_point_t point;
@@ -1569,6 +1641,10 @@ struct PrismWindow::Impl : QObject {
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(sortButtons.front()), TRUE);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(listMode), TRUE);
     libraryPane->fileClicked = [this](const QString &name) { open(name); };
+    libraryPane->deleteRequested = [this] { trashSelection(); };
+    libraryPane->menuRequested = [this](double x, double y) {
+      showLibraryMenu(x, y);
+    };
     libraryPane->activated = [this](const QString &name, bool isDirectory) {
       if (isDirectory)
         browse(name);
@@ -1730,6 +1806,8 @@ struct PrismWindow::Impl : QObject {
     a["smoothZoom"] = [this] { setSmoothZoom(!smoothZoom); };
     a["photoMenu"] = [this] { showPhotoMenuFromKeyboard(); };
     a["duplicates"] = [this] { showFileDialog(true); };
+    a["trashPhoto"] = [this] { trashPhoto(); };
+    a["trashSelection"] = [this] { trashSelection(); };
     a["usb"] = [this] { openUsb(); };
     a["compare"] = [this] { toggleCompare(); };
     a["zoomOut"] = [this] { activeView()->scaleCentered(0.8); };
@@ -1840,6 +1918,8 @@ struct PrismWindow::Impl : QObject {
         Gx::shortcut(canvas, keyval, modifiers, std::move(run));
       };
       image(GDK_KEY_1, Gx::NoModifier, [this] { activeView()->actual(); });
+      for (guint remove : {GDK_KEY_Delete, GDK_KEY_KP_Delete})
+        image(remove, Gx::NoModifier, [this, target] { trashPhoto(target); });
       image(GDK_KEY_KP_1, Gx::NoModifier, [this] { activeView()->actual(); });
       image(GDK_KEY_f, Gx::NoModifier, [this] { activeView()->fit(); });
       for (guint previous : {GDK_KEY_Left, GDK_KEY_Page_Up})
@@ -1910,6 +1990,10 @@ struct PrismWindow::Impl : QObject {
                      [this] { dropChecked(); });
     QObject::connect(&dropCopy, &QFutureWatcher<CopyReport>::finished, this,
                      [this] { dropCopied(); });
+    QObject::connect(&trashCheck, &QFutureWatcher<TrashCheck>::finished, this,
+                     [this] { trashChecked(); });
+    QObject::connect(&trashJob, &QFutureWatcher<TrashReport>::finished, this,
+                     [this] { trashFinished(); });
     QObject::connect(&clipboardWatcher,
                      &QFutureWatcher<ClipboardImage>::finished, this,
                      [this] { clipboardReady(); });
@@ -1974,11 +2058,16 @@ struct PrismWindow::Impl : QObject {
     view->status = [this](const QString &text) {
       if (!isShuttingDown && text.startsWith("Gotowe"))
         prefetchDelay.start();
+      if (restoreTrashNotice(text))
+        return;
       setStatus(text);
     };
     compareView->status = [this](const QString &text) {
-      if (comparing())
-        setStatus("Porównanie • " + text);
+      if (!comparing())
+        return;
+      if (restoreTrashNotice(text))
+        return;
+      setStatus("Porównanie • " + text);
     };
     view->loadingChanged = [this](bool value) { loadingChanged(true, value); };
     compareView->loadingChanged = [this](bool value) {
@@ -2027,6 +2116,7 @@ struct PrismWindow::Impl : QObject {
                          return;
                        scanInFlight = false;
                        siblings = scan.result();
+                       siblingsDirectory = scanningDirectory;
                        prefetchDelay.start();
                        if (!activePhoto().isEmpty() &&
                            QFileInfo(activePhoto()).absolutePath() !=
@@ -2059,6 +2149,7 @@ struct PrismWindow::Impl : QObject {
     gtk_box_append(GTK_BOX(root), buildToolbar());
     gtk_box_append(GTK_BOX(root), buildTabs());
     buildPhotoMenu();
+    buildLibraryMenu();
 
     content = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_paned_set_start_child(GTK_PANED(content), buildSidebar());
@@ -2224,6 +2315,10 @@ struct PrismWindow::Impl : QObject {
       return;
     if (dropBusy()) {
       setStatus("Poczekaj: poprzednie kopiowanie do folderu jeszcze trwa.");
+      return;
+    }
+    if (trashBusy()) {
+      setStatus("Poczekaj: przenoszenie do kosza jeszcze trwa.");
       return;
     }
     if (!validLocalPath(folder) || !QFileInfo(folder).isDir())
@@ -2468,6 +2563,339 @@ struct PrismWindow::Impl : QObject {
     else
       setStatus(Ui::tr("Skopiowano do „%1”: %2.").arg(name, done));
   }
+
+  // ------------------------------------------------------------ trash ---
+  // Delete never removes a file permanently: the files the user chose are
+  // examined, listed in a question whose default answer is Anuluj, and only
+  // then moved to the system trash, where they can be restored.
+  bool trashBusy() const {
+    return trashCheck.isRunning() || trashJob.isRunning() || trashAsking;
+  }
+  // Delete in the library (or its menu): the selected files, never folders.
+  void trashSelection() {
+    if (isShuttingDown || !libraryPane)
+      return;
+    const QStringList files = libraryPane->selectedFiles();
+    const int folders = libraryPane->selectedFolderCount();
+    if (files.isEmpty()) {
+      setStatus(folders ? "Foldery nie trafiają do kosza. Zaznacz zdjęcia."
+                        : "Zaznacz zdjęcia w bibliotece, aby przenieść je do "
+                          "kosza.");
+      return;
+    }
+    askTrash(files, folders);
+  }
+  // Delete on a photo (or its menu): that displayed photo only.
+  void trashPhoto(PhotoView *target = nullptr) {
+    if (isShuttingDown)
+      return;
+    const QString photo = !target                        ? activePhoto()
+                          : target == compareView.get() ? comparedPath
+                                                        : path;
+    if (photo.isEmpty()) {
+      setStatus("Najpierw otwórz zdjęcie.");
+      return;
+    }
+    askTrash({photo}, 0);
+  }
+  // Step 1: examine in the background. Nothing changes yet.
+  void askTrash(const QStringList &files, int folders) {
+    if (isShuttingDown || files.isEmpty())
+      return;
+    if (dropBusy()) {
+      setStatus("Poczekaj: kopiowanie do folderu jeszcze trwa.");
+      return;
+    }
+    if (trashBusy()) {
+      setStatus("Poczekaj: przenoszenie do kosza jeszcze trwa.");
+      return;
+    }
+    const QString folder = QFileInfo(files.first()).absolutePath();
+    for (const auto &file : files)
+      if (!validLocalPath(file) || QFileInfo(file).absolutePath() != folder) {
+        setStatus("Zaznacz pliki z jednego folderu.");
+        return;
+      }
+    trashCancel->store(true);
+    auto token = std::make_shared<std::atomic_bool>(false);
+    trashCancel = token;
+    trashFolder = folder;
+    trashFolders = folders;
+    setStatus("Sprawdzam pliki do przeniesienia do kosza…");
+    trashCheck.setFuture(QtConcurrent::run(&dropPool, [files, token] {
+      TrashCheck result;
+      try {
+        result.items = FileOps::examineTrash(files, token);
+      } catch (const std::exception &e) {
+        result.error = QString::fromUtf8(e.what());
+        result.cancelled = token->load();
+      }
+      return result;
+    }));
+  }
+  static QString trashDetails(const QList<TrashItem> &items) {
+    QStringList ready, blocked;
+    for (const auto &item : items) {
+      const QString name = QFileInfo(item.path).fileName();
+      if (item.blocked)
+        blocked << Ui::tr("%1 — pominięty: %2").arg(name, Ui::tr(item.note));
+      else
+        ready << QString("%1 — %2").arg(name, fileStamp(item.size, item.modified));
+    }
+    const QStringList all = ready + blocked;
+    QStringList lines = all.mid(0, 12);
+    const int hidden = int(all.size() - lines.size());
+    if (hidden)
+      lines.append(Ui::tr(Ui::counted(hidden, "…i jeszcze %1 plik",
+                                      "…i jeszcze %1 pliki",
+                                      "…i jeszcze %1 plików")));
+    return lines.join('\n');
+  }
+  // Step 2: the question. Anuluj is the default answer (Enter) and Esc.
+  void trashChecked() {
+    if (isShuttingDown)
+      return;
+    const auto result = trashCheck.result();
+    if (result.cancelled) {
+      setStatus("Anulowano. Nic nie przeniesiono do kosza.");
+      return;
+    }
+    if (!result.error.isEmpty()) {
+      setStatus(Ui::tr("Nie przeniesiono do kosza: %1").arg(Ui::tr(result.error)));
+      return;
+    }
+    int ready = 0;
+    qint64 bytes = 0;
+    trashBlocked = 0;
+    const TrashItem *firstReady = nullptr, *firstBlocked = nullptr;
+    for (const auto &item : result.items) {
+      if (item.blocked) {
+        ++trashBlocked;
+        if (!firstBlocked)
+          firstBlocked = &item;
+      } else {
+        ++ready;
+        bytes += item.size;
+        if (!firstReady)
+          firstReady = &item;
+      }
+    }
+    if (!ready) {
+      // Nothing can go to the trash: say why, ask nothing.
+      QString text = Ui::tr("Nie przeniesiono do kosza: %1 — %2")
+                         .arg(QFileInfo(firstBlocked->path).fileName(),
+                              Ui::tr(firstBlocked->note));
+      if (trashBlocked > 1)
+        text += " " + Ui::tr(Ui::counted(trashBlocked - 1, "…i jeszcze %1 plik",
+                                         "…i jeszcze %1 pliki",
+                                         "…i jeszcze %1 plików"));
+      setStatus(text);
+      return;
+    }
+    const QString folder = QFileInfo(trashFolder).fileName().isEmpty()
+                               ? trashFolder
+                               : QFileInfo(trashFolder).fileName();
+    QString text =
+        ready == 1
+            ? Ui::tr("Plik „%1” zostanie przeniesiony z folderu „%2” do kosza "
+                     "systemowego. Można go stamtąd przywrócić.")
+                  .arg(QFileInfo(firstReady->path).fileName(), folder)
+            : Ui::tr(Ui::counted(ready, // n ≥ 2: the first form is never used
+                                 "%1 pliki z folderu „%2” zostaną przeniesione "
+                                 "do kosza systemowego (razem %3). Można je "
+                                 "stamtąd przywrócić.",
+                                 "%1 pliki z folderu „%2” zostaną przeniesione "
+                                 "do kosza systemowego (razem %3). Można je "
+                                 "stamtąd przywrócić.",
+                                 "%1 plików z folderu „%2” zostanie "
+                                 "przeniesionych do kosza systemowego (razem "
+                                 "%3). Można je stamtąd przywrócić."))
+                  .arg(folder, QLocale().formattedDataSize(bytes, 1));
+    if (trashBlocked)
+      text += " " + Ui::tr(Ui::counted(trashBlocked,
+                                       "%1 plik zostanie na miejscu.",
+                                       "%1 pliki zostaną na miejscu.",
+                                       "%1 plików zostanie na miejscu."));
+    if (trashFolders)
+      text += " " + Ui::tr(Ui::counted(trashFolders,
+                                       "%1 zaznaczony folder pozostaje bez "
+                                       "zmian.",
+                                       "%1 zaznaczone foldery pozostają bez "
+                                       "zmian.",
+                                       "%1 zaznaczonych folderów pozostaje bez "
+                                       "zmian."));
+    // No accelerator on the move button (as in the duplicates confirmation):
+    // only a click, or Tab to it and Enter, moves anything.
+    const QString move =
+        ready == 1 ? QString("Przenieś do kosza")
+                   : Ui::counted(ready, "Przenieś %1 plik do kosza",
+                                 "Przenieś %1 pliki do kosza",
+                                 "Przenieś %1 plików do kosza");
+    trashAsking = true;
+    const auto items = result.items;
+    Dialogs::message(
+        window, ready == 1 ? "Przenieść plik do kosza?" : "Przenieść pliki do kosza?",
+        text, trashDetails(items), {"&Anuluj", move}, 0, 0,
+        [this, live = alive, items](int choice) {
+          if (!*live)
+            return;
+          trashAsking = false;
+          if (isShuttingDown)
+            return;
+          if (choice == 1)
+            startTrash(items);
+          else
+            setStatus("Anulowano. Nic nie przeniesiono do kosza.");
+        });
+  }
+  // Next photo of the folder that stays, else the previous one; never `other`
+  // (the photo of the other pane).
+  QString survivor(const QString &photo, const QSet<QString> &going,
+                   const QString &other) const {
+    if (photo.isEmpty() || !going.contains(photo) ||
+        QFileInfo(photo).absolutePath() != siblingsDirectory)
+      return {};
+    const int i = int(siblings.indexOf(photo));
+    if (i < 0)
+      return {};
+    for (int j = i + 1; j < siblings.size(); ++j)
+      if (!going.contains(siblings.at(j)) && siblings.at(j) != other)
+        return siblings.at(j);
+    for (int j = i - 1; j >= 0; --j)
+      if (!going.contains(siblings.at(j)) && siblings.at(j) != other)
+        return siblings.at(j);
+    return {};
+  }
+  // Step 3: move exactly the files listed in the question.
+  void startTrash(const QList<TrashItem> &items) {
+    if (isShuttingDown || dropBusy() || trashBusy())
+      return;
+    QSet<QString> going;
+    for (const auto &item : items)
+      if (!item.blocked)
+        going.insert(item.path);
+    trashNext = survivor(path, going, comparedPath);
+    trashNextCompared = survivor(comparedPath, going, path);
+    trashCancel->store(true);
+    auto token = std::make_shared<std::atomic_bool>(false);
+    trashCancel = token;
+    setStatus("Przenoszę do kosza…");
+    auto report = [this, token](qint64 done, qint64 total) {
+      QMetaObject::invokeMethod(
+          this,
+          [this, token, done, total] {
+            if (token == trashCancel && !token->load() && !isShuttingDown &&
+                total > 1)
+              setStatus(Ui::tr("Przenoszę do kosza: %1 / %2…")
+                            .arg(done)
+                            .arg(total));
+          },
+          Qt::QueuedConnection);
+    };
+    trashJob.setFuture(QtConcurrent::run(&dropPool, [items, token, report] {
+      try {
+        return FileOps::trashItems(items, token, report);
+      } catch (const std::exception &e) {
+        TrashReport failed;
+        failed.error = QString::fromUtf8(e.what());
+        return failed;
+      }
+    }));
+  }
+  // Step 4: report, and let nothing keep showing a photo that left.
+  void trashFinished() {
+    if (isShuttingDown)
+      return;
+    const TrashReport r = trashJob.result();
+    const QSet<QString> gone(r.trashedPaths.cbegin(), r.trashedPaths.cend());
+    bool replaced = false; // another photo took the place of a trashed one
+    if (!gone.isEmpty()) {
+      for (const auto &moved : r.trashedPaths)
+        siblings.removeAll(moved);
+      // The next photo opened lists the folder again (a listing in flight
+      // may still name the moved files, and new files may have appeared).
+      scanDirectory.clear();
+      prefetchDelay.stop();
+      prefetch->cancel();
+      prefetchSignature.clear();
+      for (int i = 0; i < tabStates.size(); ++i) {
+        if (i == activeTabIndex)
+          continue;
+        if (gone.contains(tabStates[i].file))
+          tabStates[i].file.clear();
+        if (gone.contains(tabStates[i].comparison))
+          tabStates[i].comparison.clear();
+      }
+      const bool leftGone = gone.contains(path),
+                 rightGone = gone.contains(comparedPath);
+      if (rightGone) {
+        if (!trashNextCompared.isEmpty() && QFileInfo(trashNextCompared).isFile()) {
+          showComparison(trashNextCompared);
+          replaced = true;
+        } else
+          closePhotoPane(true);
+      }
+      if (leftGone) {
+        if (!trashNext.isEmpty() && QFileInfo(trashNext).isFile()) {
+          open(trashNext);
+          replaced = true;
+        } else
+          closePhotoPane(false);
+      }
+      libraryPane->refresh();
+    }
+    QString text;
+    if (r.cancelled)
+      text = Ui::tr("Przerwano przenoszenie do kosza.");
+    else if (!r.error.isEmpty())
+      text = Ui::tr("Przerwano przenoszenie do kosza na pliku %1: %2")
+                 .arg(r.failedFile, Ui::tr(r.error));
+    const bool stopped = !text.isEmpty();
+    if (r.trashed)
+      text += (stopped ? " " : "") +
+              (stopped ? Ui::tr(Ui::counted(
+                             r.trashed, "Wcześniej przeniesiono do kosza %1 plik.",
+                             "Wcześniej przeniesiono do kosza %1 pliki.",
+                             "Wcześniej przeniesiono do kosza %1 plików."))
+                       : Ui::tr(Ui::counted(r.trashed,
+                                            "Przeniesiono do kosza %1 plik.",
+                                            "Przeniesiono do kosza %1 pliki.",
+                                            "Przeniesiono do kosza %1 plików.")));
+    else
+      text += (stopped ? " " : "") + Ui::tr("Nic nie przeniesiono do kosza.");
+    if (r.skipped) {
+      QStringList notes;
+      for (const auto &note : r.skippedNotes.mid(0, 3))
+        notes << Ui::tr(note);
+      if (r.skipped > 3)
+        notes << Ui::tr(Ui::counted(r.skipped - 3, "…i jeszcze %1 plik",
+                                    "…i jeszcze %1 pliki",
+                                    "…i jeszcze %1 plików"));
+      text += " " + Ui::tr("Pominięto: %1.").arg(notes.join("; "));
+    }
+    if (trashBlocked)
+      text += " " + Ui::tr(Ui::counted(trashBlocked, "%1 plik został na miejscu.",
+                                       "%1 pliki zostały na miejscu.",
+                                       "%1 plików zostało na miejscu."));
+    setStatus(text);
+    if (replaced) {
+      trashNotice = text;
+      trashNoticeUntil.setRemainingTime(5000);
+    }
+  }
+  // The photo that replaced a trashed one reports "Gotowe" (after the preview
+  // and again after the full picture): keep showing the trash report instead,
+  // for a few seconds after the move. Opening another photo ends it.
+  bool restoreTrashNotice(const QString &text) {
+    if (trashNotice.isEmpty() || !text.startsWith("Gotowe"))
+      return false;
+    if (trashNoticeUntil.hasExpired()) {
+      trashNotice.clear();
+      return false;
+    }
+    setStatus(trashNotice);
+    return true;
+  }
   void beginShutdown() {
     if (isShuttingDown)
       return;
@@ -2485,10 +2913,17 @@ struct PrismWindow::Impl : QObject {
     dropCancel->store(true);
     dropCheck.disconnect(this);
     dropCopy.disconnect(this);
+    // A move to the trash stops before the next file; the one in progress is
+    // a single rename, so each file is either in its folder or in the trash.
+    trashCancel->store(true);
+    trashCheck.disconnect(this);
+    trashJob.disconnect(this);
     if (printJob)
       printJob->cancel();
     if (photoMenu)
       gtk_popover_popdown(GTK_POPOVER(photoMenu));
+    if (libraryMenu)
+      gtk_popover_popdown(GTK_POPOVER(libraryMenu));
     storageTimer.stop();
     storageWatcher.disconnect(this);
     opacitySave.stop();
@@ -2547,6 +2982,9 @@ PrismWindow::~PrismWindow() {
   if (d->photoMenu)
     gtk_widget_unparent(d->photoMenu);
   d->photoMenu = nullptr;
+  if (d->libraryMenu)
+    gtk_widget_unparent(d->libraryMenu);
+  d->libraryMenu = nullptr;
   d->favorites->shutdown();
   d->compareView.reset();
   d->view.reset();
@@ -2668,6 +3106,12 @@ bool PrismWindow::dropFiles(const QStringList &files, double x, double y,
 }
 bool PrismWindow::copyingToFolder() const {
   return d->dropCheck.isRunning() || d->dropCopy.isRunning();
+}
+bool PrismWindow::movingToTrash() const {
+  return d->trashCheck.isRunning() || d->trashJob.isRunning();
+}
+void PrismWindow::showLibraryMenu(double x, double y) {
+  d->showLibraryMenu(x, y);
 }
 void PrismWindow::showComparison(const QString &path) {
   d->showComparison(path);

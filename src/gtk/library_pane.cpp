@@ -753,6 +753,46 @@ struct LibraryPane::Impl : QObject {
         this);
     gtk_widget_add_controller(view, legacy);
   }
+  // Right click on a file: select it (unless already selected), then ask for
+  // the menu. Folders and empty space get no menu.
+  void watchMenu(GtkWidget *view) {
+    auto *click = gtk_gesture_click_new();
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click), GDK_BUTTON_SECONDARY);
+    g_object_set_data(G_OBJECT(click), "prism-view", view);
+    Gx::connect(
+        click, "pressed",
+        +[](GtkGestureClick *gesture, int, double x, double y, gpointer data) {
+          auto *self = static_cast<Impl *>(data);
+          if (self->stopped)
+            return;
+          auto *view =
+              GTK_WIDGET(g_object_get_data(G_OBJECT(gesture), "prism-view"));
+          const auto entry = entryAt(view, x, y);
+          if (!entry || entry->dir)
+            return;
+          gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+          for (guint i = 0; i < self->entries.size(); ++i)
+            if (self->entries[i] == entry) {
+              if (!gtk_selection_model_is_selected(
+                      GTK_SELECTION_MODEL(self->selection), i))
+                gtk_selection_model_select_item(
+                    GTK_SELECTION_MODEL(self->selection), i, TRUE);
+              break;
+            }
+          gtk_widget_grab_focus(view);
+          if (self->q->menuRequested)
+            self->q->menuRequested(x, y);
+        },
+        this);
+    gtk_widget_add_controller(view, GTK_EVENT_CONTROLLER(click));
+  }
+  void watchDelete(GtkWidget *view) {
+    for (guint key : {GDK_KEY_Delete, GDK_KEY_KP_Delete})
+      Gx::shortcut(view, key, Gx::NoModifier, [this] {
+        if (!stopped && q->deleteRequested)
+          q->deleteRequested();
+      });
+  }
   void activate(guint position) {
     if (position >= entries.size() || !q->activated)
       return;
@@ -799,6 +839,8 @@ struct LibraryPane::Impl : QObject {
                      this);
     watchClicks(columnView);
     watchDrags(columnView);
+    watchMenu(columnView);
+    watchDelete(columnView);
     listScroll = gtk_scrolled_window_new();
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(listScroll),
                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
@@ -817,6 +859,8 @@ struct LibraryPane::Impl : QObject {
                      this);
     watchClicks(gridView);
     watchDrags(gridView);
+    watchMenu(gridView);
+    watchDelete(gridView);
     gridScroll = gtk_scrolled_window_new();
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(gridScroll),
                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
@@ -962,6 +1006,19 @@ QStringList LibraryPane::selectedFiles() const {
     } while (gtk_bitset_iter_next(&iter, &position));
   gtk_bitset_unref(set);
   return result;
+}
+int LibraryPane::selectedFolderCount() const {
+  int folders = 0;
+  GtkBitset *set =
+      gtk_selection_model_get_selection(GTK_SELECTION_MODEL(d->selection));
+  GtkBitsetIter iter;
+  guint position = 0;
+  if (gtk_bitset_iter_init_first(&iter, set, &position))
+    do {
+      folders += position < d->entries.size() && d->entries[position]->dir;
+    } while (gtk_bitset_iter_next(&iter, &position));
+  gtk_bitset_unref(set);
+  return folders;
 }
 QString LibraryPane::selectedPath(bool *isDirectory) const {
   GtkBitset *set =

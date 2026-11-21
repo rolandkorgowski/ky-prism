@@ -46,6 +46,7 @@ Gdy fokus jest **na zdjęciu**:
 | + (również =) / − | Przybliż / oddal |
 | Shift+strzałki | Przesuń widok o 64 piksele logiczne |
 | Ctrl+Shift+strzałki | Przesuń widok o 256 pikseli logicznych |
+| Delete | Przenieś wyświetlone zdjęcie do kosza (zawsze po potwierdzeniu) |
 
 W lewej liście strzałki wybierają pozycję, a Enter otwiera plik lub katalog.
 F6 przenosi fokus z listy do ścieżki i dalej do zdjęcia (lub widocznego EXIF).
@@ -53,7 +54,7 @@ W polach tekstowych działają zwykłe skróty edycji, m.in. Ctrl+A/C/V/X/Z.
 Ctrl+C w polu tekstowym lub w zaznaczonym tekście kopiuje ten tekst; poza nimi
 kopiuje wyświetlone zdjęcie do schowka. Prawy przycisk myszy na zdjęciu, klawisz
 Menu lub Shift+F10 otwiera menu: kopiuj do schowka, eksportuj kopię pliku,
-ulubione, EXIF, pełny ekran.
+ulubione, EXIF, pełny ekran, przenieś do kosza.
 
 ## Przeciąganie myszą z lewej listy
 
@@ -73,6 +74,28 @@ zaznaczenie. Foldery nie są przeciągane.
   dokładnie ten sam plik (identyczny co do bajtu), okienko o tym informuje
   i niczego nie nadpisuje. Dowiązania, foldery i pliki specjalne o tej nazwie
   nigdy nie są zmieniane.
+
+## Przenoszenie do kosza (Delete)
+
+- **Delete na liście lub miniaturach** przenosi do kosza zaznaczone pliki
+  (Ctrl/Shift+klik zaznacza wiele). To samo robi prawy przycisk myszy na
+  pliku w bibliotece → „Przenieś do kosza…”. Prawy przycisk na
+  niezaznaczonym pliku najpierw zaznacza tylko ten plik.
+- **Delete na zdjęciu** (fokus na zdjęciu) albo „Przenieś do kosza…” w menu
+  zdjęcia przenosi tylko wyświetlone zdjęcie.
+- Zawsze pojawia się pytanie z listą plików, ich rozmiarem i datą.
+  **Domyślna odpowiedź to Anuluj**: Enter i Esc niczego nie zmieniają.
+  Przenosi dopiero przycisk „Przenieś do kosza”: kliknij go albo przejdź do
+  niego Tabem i naciśnij Enter. Ten przycisk celowo nie ma skrótu Alt+litera.
+- Pliki trafiają do **kosza systemowego**, skąd można je przywrócić (np.
+  w menedżerze plików). Program nigdy nie usuwa niczego trwale. Gdy na danym
+  dysku nie ma kosza albo brak uprawnień do folderu, plik zostaje na miejscu,
+  a pasek stanu mówi dlaczego.
+- Foldery, dowiązania i pliki specjalne nigdy nie trafiają do kosza. Plik,
+  który zmienił się po pytaniu, zostaje na miejscu.
+- Gdy do kosza trafi wyświetlone zdjęcie, w jego miejscu otwiera się
+  następne zdjęcie z folderu (albo poprzednie, gdy było ostatnie).
+- W polu ścieżki katalogu Delete usuwa znak, jak zwykle.
 
 ## Zakładki i ulubione
 

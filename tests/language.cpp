@@ -45,6 +45,13 @@ int main(int argc,char **argv) {
     check(PrismLanguage::text("Nie można odczytać zdjęcia: /tmp/Załaduj zdjęcie %1.jpg")=="Cannot read the photo: /tmp/Załaduj zdjęcie %1.jpg","diagnostic changed a literal path");
     check(PrismLanguage::text("Wolne: 12.0 GiB / 50.0 GiB")=="Free: 12.0 GiB / 50.0 GiB","formatted status translation");
     check(PrismLanguage::text("Wersja 0.12.2 · przeglądarka zdjęć GPU")=="Version 0.12.2 · GPU photo viewer","composed About version");
+    // Trash (Delete): counted templates keep the arguments filled in later.
+    check(PrismLanguage::text("3 pliki z folderu „%2” zostaną przeniesione do kosza systemowego (razem %3). Można je stamtąd przywrócić.")
+              =="3 files from the folder “%2” will be moved to the system Trash (%3 in total). They can be restored from there.","trash question translation");
+    check(PrismLanguage::text("Przenieś 12 plików do kosza")=="Move 12 files to Trash","trash button translation");
+    check(PrismLanguage::text("Przeniesiono do kosza 5 plików.")=="Moved 5 files to the Trash.","trash report translation");
+    check(PrismLanguage::text("Pominięto: %1.").arg(PrismLanguage::text("a [1].jpg — plik zmienił się od pytania"))
+              =="Skipped: a [1].jpg — the file changed after the question.","trash notes keep file names");
     QProcess process;auto env=QProcessEnvironment::systemEnvironment();env.remove("PRISM_LANGUAGE");process.setProcessEnvironment(env);
     process.start(QCoreApplication::applicationFilePath(),{"--probe"});check(process.waitForFinished(6000),"preference probe hung");
     check(process.exitCode()==0 && process.readAllStandardOutput()=="EN","language was not saved for restart");

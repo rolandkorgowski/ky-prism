@@ -72,4 +72,8 @@ public:
   bool dropFiles(const QStringList &files, double x, double y, bool fromLibrary);
   // Examining or copying files dropped on a folder (not while asking).
   bool copyingToFolder() const;
+  // Examining or moving files to the trash (not while asking).
+  bool movingToTrash() const;
+  // Tests: the library's right-click menu at a point of its visible view.
+  void showLibraryMenu(double x, double y);
 };

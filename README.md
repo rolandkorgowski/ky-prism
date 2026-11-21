@@ -229,8 +229,17 @@ To see what is missing without installing anything:
   one step, so on Linux and BSD filesystems (ext4, btrfs, XFS, ZFS, UFS) an
   interruption or power cut leaves either the old or the new file, never a
   half-written one. FAT/exFAT drives do not guarantee this.
+- Move photos to the trash with `Delete`: the selected files in the library
+  (list or thumbnails, also from its right-click menu) or the displayed photo
+  (also from the photo's menu). A question always comes first, lists the
+  files and has Cancel as its default answer. Only regular files that have
+  not changed since the question are moved, into the system trash, where
+  they can be restored. Nothing is ever deleted permanently: if a disk has
+  no usable trash, the file stays where it is. Folders are never moved.
 - Favourites, bookmarks, EXIF panel, copying to USB drives and duplicate
-  search. Originals are never modified.
+  search. Originals are never modified; the only changes are the ones you
+  confirm in a question (Overwrite when copying into a folder, a move to the
+  trash).
 - Adjustable interface opacity (`Ctrl+Alt+O`). It changes only the toolbars
   and panels; the photo is always shown fully opaque.
 - Sharp pixels when zoomed in: from 100 % every photo pixel is shown as a

@@ -30,6 +30,7 @@ public:
   void setPhotosOnly(bool enabled);
   void refresh();
   QStringList selectedFiles() const;
+  int selectedFolderCount() const;
   // Single selected entry (file or directory); empty otherwise.
   QString selectedPath(bool *isDirectory = nullptr) const;
   void select(const QString &path);
@@ -67,5 +68,11 @@ public:
   // Double click / Enter.
   std::function<void(const QString &path, bool isDirectory)> activated;
   std::function<void()> selectionChanged;
+  // Delete on the list or the thumbnails (the window asks before anything
+  // moves to the trash).
+  std::function<void()> deleteRequested;
+  // Right click on a file: it is selected first unless it already is part of
+  // the selection. (x, y) are in the visible view's coordinates.
+  std::function<void(double x, double y)> menuRequested;
   std::function<void()> listed;
 };

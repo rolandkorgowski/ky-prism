@@ -3,6 +3,85 @@
 Raporty `reports/…` wymienione niżej są lokalnymi logami z testów i nie są publikowane w repozytorium.
 
 
+## 0.13.0 — przenoszenie do kosza (Delete)
+
+Drugi wyjątek od zasady „program nie zmienia plików użytkownika”. Delete
+przenosi pliki do **kosza systemowego**, zawsze po potwierdzeniu. Nic nie
+jest usuwane trwale.
+
+- **Skąd:** Delete na liście lub miniaturach (zaznaczone pliki), prawy
+  przycisk na pliku w bibliotece („Przenieś do kosza…”), Delete na zdjęciu
+  i pozycja w menu zdjęcia (tylko wyświetlone zdjęcie). Delete jest
+  przypięty do widoków, a nie do całego okna, więc w polu ścieżki działa
+  jak zwykle.
+- **Trzy kroki,** jak przy kopiowaniu na folder:
+  1. `FileOps::examineTrash` sprawdza w tle każdy plik (`lstat`) i niczego
+     nie zmienia. Do kosza mogą trafić tylko zwykłe pliki z folderu, który
+     wolno zmieniać. Dowiązania, foldery, pliki specjalne i pliki, których
+     już nie ma, zostają z opisem przyczyny. Program zapisuje tożsamość
+     pliku: urządzenie, i-węzeł, rozmiar, `mtime` i `ctime`.
+  2. Pytanie wymienia pliki z rozmiarem i datą oraz folder. Domyślny
+     przycisk to Anuluj (także Enter i Esc). Przycisk przeniesienia nie ma
+     skrótu Alt+litera (jak w potwierdzeniu duplikatów). Potwierdzenie
+     przenosi dokładnie pliki z pytania, nawet jeśli zaznaczenie się
+     zmieniło.
+  3. `FileOps::trashItems` tuż przed przeniesieniem każdego pliku sprawdza
+     ponownie jego tożsamość. Plik zmieniony lub podmieniony po pytaniu
+     zostaje na miejscu. Przy pierwszym błędzie praca się zatrzymuje.
+- **Bezpieczeństwo:** `QFile::moveToTrash` działa według specyfikacji
+  freedesktop.org. Najpierw zapisuje plik informacji (`.trashinfo`), potem
+  przenosi plik zmianą nazwy (Qt < 6.7) albo dowiązaniem i usunięciem starej
+  nazwy (Qt ≥ 6.7) do kosza na tym samym dysku. Nigdy nie kopiuje, więc po
+  przerwaniu lub zaniku zasilania plik jest w folderze albo w koszu, nigdy
+  w połowie. Na innych dyskach używany jest kosz `.Trash-<uid>` w katalogu
+  głównym dysku. Gdy kosza nie da się użyć, plik zostaje, a program podaje
+  przyczynę.
+- **Usterka Qt ≥ 6.7 wykryta testem:** w folderze bez prawa zapisu Qt
+  dowiązuje plik do kosza, nie może usunąć starej nazwy i mimo to zgłasza
+  sukces. Program sprawdza, czy plik nadal jest w folderze. Jeśli tak,
+  zgłasza błąd i usuwa z kosza tę drugą nazwę tego samego pliku (oraz jej
+  `.trashinfo`), a sam plik zostaje nietknięty.
+- **Po przeniesieniu:** biblioteka odświeża listę. W miejscu wyświetlonego
+  zdjęcia otwiera się następne z folderu (albo poprzednie), nigdy zdjęcie
+  z drugiego panelu porównania. Gdy nie ma już żadnego, panel się zamyka
+  (bez obu zdjęć pojawia się ekran powitalny). Karty w tle zapominają
+  przeniesione zdjęcia. Strzałki pomijają pliki, których już nie ma.
+  Komunikat o koszu zostaje na pasku stanu przez kilka sekund, mimo
+  komunikatów „Gotowe” nowego zdjęcia.
+- Kopiowanie na folder i przenoszenie do kosza nie biegną jednocześnie
+  (wspólny wątek, wzajemna blokada). Zamknięcie okna w trakcie pytania
+  zamyka je bez przenoszenia.
+
+Testy:
+
+- `file_trash` (bez ekranu, `HOME` i `XDG_DATA_HOME` w katalogu
+  tymczasowym) sprawdza:
+  - klasyfikację plików, anulowanie i przeniesienie (ten sam i-węzeł
+    w `Trash/files`, wpis `.trashinfo`),
+  - pliki zmienione, z nowym czasem modyfikacji lub podmienione po pytaniu,
+    plik usunięty w międzyczasie,
+  - dwa razy tę samą nazwę (kosz niczego nie nadpisuje),
+  - folder tylko do odczytu (przed pytaniem i po nim),
+  - niedziałający kosz,
+  - po każdym kroku, że żaden i-węzeł nie zniknął, czyli nic nie zostało
+    usunięte trwale.
+- `gtk_ui` sprawdza:
+  - Delete na liście, miniaturach i zdjęciu (prawdziwe skróty widoków)
+    oraz menu prawego przycisku,
+  - puste zaznaczenie i sam folder (bez pytania),
+  - treść pytania i Anuluj jako domyślną odpowiedź; Anuluj i Esc niczego
+    nie zmieniają,
+  - przeniesienie dwóch plików i wyświetlonego zdjęcia oraz to, co okno
+    pokazuje potem.
+
+  Prawdziwe przeniesienie robi tylko wtedy, gdy kosz na pewno jest
+  w katalogu testu: Qt ≥ 6.7 albo katalog testu na tym samym dysku co
+  `HOME`. Kosz użytkownika nigdy nie jest używany.
+- Nie sprawdzono prawdziwego kliknięcia prawym przyciskiem myszy
+  (test wywołuje gest bezpośrednio). Z kodu GTK 4.22 wynika, że wiersze
+  listy obsługują tylko lewy przycisk. Na FreeBSD i OpenBSD tej zmiany
+  jeszcze nie uruchamiano.
+
 ## 0.13.0 — przeciąganie z lewej listy
 
 Zdjęcia z lewej listy (tryb listy i miniatur) można przeciągać myszą.

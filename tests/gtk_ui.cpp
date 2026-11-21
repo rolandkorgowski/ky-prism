@@ -26,8 +26,11 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLibraryInfo>
 #include <QRegularExpression>
+#include <QStorageInfo>
 #include <QTemporaryDir>
+#include <QVersionNumber>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -125,8 +128,8 @@ void closeDialog(GtkWindow *dialog) {
     gtk_window_close(dialog);
   pump(120);
 }
-// Clicks the dialog button whose caption is `caption`.
-bool press(GtkWindow *dialog, const QString &caption) {
+// Clicks the button whose caption is `caption` inside `area`.
+bool pressIn(GtkWidget *area, const QString &caption) {
   std::function<GtkWidget *(GtkWidget *)> find = [&](GtkWidget *w) -> GtkWidget * {
     if (GTK_IS_BUTTON(w))
       if (auto *label = findType(w, GTK_TYPE_LABEL);
@@ -137,11 +140,15 @@ bool press(GtkWindow *dialog, const QString &caption) {
         return found;
     return nullptr;
   };
-  auto *button = dialog ? find(GTK_WIDGET(dialog)) : nullptr;
+  auto *button = area ? find(area) : nullptr;
   if (button)
     g_signal_emit_by_name(button, "clicked");
   pump(150);
   return button;
+}
+// Clicks the dialog button whose caption is `caption`.
+bool press(GtkWindow *dialog, const QString &caption) {
+  return pressIn(dialog ? GTK_WIDGET(dialog) : nullptr, caption);
 }
 GtkEventController *controllerOf(GtkWidget *widget, GType type) {
   GListModel *list = gtk_widget_observe_controllers(widget);
@@ -193,6 +200,67 @@ QByteArray bytesOf(const QString &path) {
 ino_t inodeOf(const QString &path) {
   struct stat s{};
   return lstat(QFile::encodeName(path).constData(), &s) ? 0 : s.st_ino;
+}
+// Every label of a dialog, one per line.
+QString textOf(GtkWidget *widget) {
+  QString out;
+  if (GTK_IS_LABEL(widget))
+    out += QString::fromUtf8(gtk_label_get_text(GTK_LABEL(widget))) + "\n";
+  for (auto *c = gtk_widget_get_first_child(widget); c; c = gtk_widget_get_next_sibling(c))
+    out += textOf(c);
+  return out;
+}
+// The unmodified `key` shortcut that `widget` itself handles: activated when
+// `activate`, otherwise only looked for.
+bool keyShortcut(GtkWidget *widget, guint key, bool activate) {
+  GListModel *controllers = gtk_widget_observe_controllers(widget);
+  bool found = false;
+  for (guint i = 0; i < g_list_model_get_n_items(controllers) && !found; ++i) {
+    auto *controller = g_list_model_get_item(controllers, i);
+    if (GTK_IS_SHORTCUT_CONTROLLER(controller)) {
+      auto *shortcuts = G_LIST_MODEL(controller);
+      for (guint j = 0; j < g_list_model_get_n_items(shortcuts) && !found; ++j) {
+        auto *shortcut = GTK_SHORTCUT(g_list_model_get_item(shortcuts, j));
+        auto *trigger = gtk_shortcut_get_trigger(shortcut);
+        if (GTK_IS_KEYVAL_TRIGGER(trigger) &&
+            gtk_keyval_trigger_get_keyval(GTK_KEYVAL_TRIGGER(trigger)) == key &&
+            gtk_keyval_trigger_get_modifiers(GTK_KEYVAL_TRIGGER(trigger)) == 0)
+          found = !activate ||
+                  gtk_shortcut_action_activate(gtk_shortcut_get_action(shortcut),
+                                               GTK_SHORTCUT_ACTION_EXCLUSIVE,
+                                               widget, nullptr);
+        g_object_unref(shortcut);
+      }
+    }
+    g_object_unref(controller);
+  }
+  g_object_unref(controllers);
+  return found;
+}
+// The right-button click gesture of a library view.
+GtkGesture *secondaryClick(GtkWidget *view) {
+  GListModel *controllers = gtk_widget_observe_controllers(view);
+  GtkGesture *found = nullptr;
+  for (guint i = 0; i < g_list_model_get_n_items(controllers) && !found; ++i) {
+    auto *controller = g_list_model_get_item(controllers, i);
+    if (GTK_IS_GESTURE_CLICK(controller) &&
+        gtk_gesture_single_get_button(GTK_GESTURE_SINGLE(controller)) ==
+            GDK_BUTTON_SECONDARY)
+      found = GTK_GESTURE(controller);
+    g_object_unref(controller);
+  }
+  g_object_unref(controllers);
+  return found;
+}
+// A visible popover below `widget` that offers `caption`.
+GtkWidget *openPopoverWith(GtkWidget *widget, const QString &caption) {
+  if (GTK_IS_POPOVER(widget) && gtk_widget_get_visible(widget) &&
+      textOf(widget).split('\n').contains(caption))
+    return widget;
+  for (auto *c = gtk_widget_get_first_child(widget); c; c = gtk_widget_get_next_sibling(c))
+    if (auto *found = openPopoverWith(c, caption))
+      return found;
+  return nullptr;
 }
 bool noTemporaries(const QString &folder) {
   return QDir(folder)
@@ -692,6 +760,191 @@ void scenario(const QString &photos, const QString &config,
                          int(library->names().indexOf("green.jpg"))});
   }
 
+  // --- Delete: always a question first (Anuluj by default), then only the
+  // system trash of the test folder; never a permanent deletion ---
+  {
+    const QString bin = work + "/kosz",
+                  trash = qEnvironmentVariable("XDG_DATA_HOME") + "/Trash",
+                  shown = window.currentPhoto();
+    QDir().mkpath(bin + "/podfolder");
+    for (const char *name : {"k1.jpg", "k2.jpg", "k3.jpg", "k4.jpg"})
+      solid(bin + "/" + name, 48, 32, {200, 40, 40});
+    const auto k1 = inodeOf(bin + "/k1.jpg"), k2 = inodeOf(bin + "/k2.jpg");
+    check(!window.compareVisible(), "no comparison before the trash checks");
+    window.setLibraryMode(false);
+    window.browse(bin);
+    waitFor([&] { return !library->scanning() && library->count() == 5; },
+            "trash folder listed");
+    auto row = [&](const char *name) { return int(library->names().indexOf(name)); };
+    auto *list = library->focusWidget();
+    check(keyShortcut(list, GDK_KEY_Delete, false) &&
+              !keyShortcut(GTK_WIDGET(gtkWindow), GDK_KEY_Delete, false),
+          "Delete belongs to the library views, not to the whole window "
+          "(the path entry keeps its own Delete)");
+    library->selectRows({});
+    check(keyShortcut(list, GDK_KEY_Delete, true) && !dialogOf(gtkWindow) &&
+              window.statusText() ==
+                  "Zaznacz zdjęcia w bibliotece, aby przenieść je do kosza.",
+          "nothing selected: no question");
+    library->selectRows({row("podfolder")});
+    window.trigger("trashSelection");
+    check(!dialogOf(gtkWindow) && QFileInfo(bin + "/podfolder").isDir() &&
+              window.statusText() == "Foldery nie trafiają do kosza. Zaznacz zdjęcia.",
+          "a folder alone: no question");
+    library->selectRows({row("k1.jpg"), row("k2.jpg"), row("podfolder")});
+    check(keyShortcut(list, GDK_KEY_Delete, true), "Delete on the list");
+    waitFor([&] { return dialogOf(gtkWindow) != nullptr; }, "trash question");
+    auto *question = dialogOf(gtkWindow);
+    shot(GTK_WIDGET(question), "08c-trash-question");
+    const QString asked = textOf(GTK_WIDGET(question));
+    check(asked.contains("2 pliki z folderu „kosz” zostaną przeniesione do kosza "
+                         "systemowego") &&
+              asked.contains("1 zaznaczony folder pozostaje bez zmian.") &&
+              asked.contains("k1.jpg — ") && asked.contains("k2.jpg — ") &&
+              !asked.contains("k3.jpg"),
+          "the question lists exactly the selected files");
+    auto *byDefault = gtk_window_get_default_widget(question);
+    check(byDefault && textOf(byDefault).trimmed() == "Anuluj",
+          "Enter answers Anuluj");
+    check(press(question, "Anuluj"), "Anuluj button");
+    waitFor([&] { return !dialogOf(gtkWindow) && !window.movingToTrash(); },
+            "question closed");
+    check(window.statusText() == "Anulowano. Nic nie przeniesiono do kosza." &&
+              inodeOf(bin + "/k1.jpg") == k1 && inodeOf(bin + "/k2.jpg") == k2 &&
+              !QFileInfo::exists(trash + "/files/k1.jpg"),
+          "Anuluj changes nothing");
+    window.trigger("trashSelection");
+    waitFor([&] { return dialogOf(gtkWindow) != nullptr; }, "question again");
+    closeDialog(dialogOf(gtkWindow)); // Esc and the close button
+    waitFor([&] { return !dialogOf(gtkWindow); }, "question dismissed");
+    check(window.statusText() == "Anulowano. Nic nie przeniesiono do kosza." &&
+              inodeOf(bin + "/k1.jpg") == k1 && inodeOf(bin + "/k2.jpg") == k2,
+          "closing the question changes nothing");
+    // Right click on an unselected thumbnail selects it, then offers the menu.
+    window.setLibraryMode(true);
+    pump(400);
+    auto *grid = library->focusWidget();
+    double tx = 0, ty = 0;
+    waitFor([&] { return library->pointOf(bin + "/k3.jpg", &tx, &ty); },
+            "thumbnail on screen");
+    check(keyShortcut(grid, GDK_KEY_Delete, false), "Delete on the thumbnails");
+    auto *click = secondaryClick(grid);
+    check(click, "the thumbnails have a right-click menu");
+    g_signal_emit_by_name(click, "pressed", 1, tx, ty);
+    pump(200);
+    check(library->selectedFiles() == QStringList{bin + "/k3.jpg"},
+          "right click selects the file under the pointer");
+    auto *menu = openPopoverWith(content(gtkWindow), "Przenieś do kosza…");
+    check(menu, "library menu shown");
+    check(pressIn(menu, "Przenieś do kosza…"), "menu button");
+    waitFor([&] { return dialogOf(gtkWindow) != nullptr; }, "question from the menu");
+    check(textOf(GTK_WIDGET(dialogOf(gtkWindow)))
+              .contains("Plik „k3.jpg” zostanie przeniesiony z folderu „kosz” do "
+                        "kosza systemowego."),
+          "the menu asks about the file under the pointer");
+    check(press(dialogOf(gtkWindow), "Anuluj"), "Anuluj from the menu");
+    waitFor([&] { return !dialogOf(gtkWindow); }, "menu question closed");
+    check(QFileInfo::exists(bin + "/k3.jpg"), "still there after Anuluj");
+
+    // Qt before 6.7 picks the trash by the disk of HOME: then the test folder
+    // could reach a trash outside it, and only the questions are checked here
+    // (file_trash covers the move itself).
+    const bool ownTrash =
+        QLibraryInfo::version() >= QVersionNumber(6, 7) ||
+        QStorageInfo(bin) == QStorageInfo(QDir::home());
+    if (ownTrash) {
+      window.setLibraryMode(false);
+      pump(300);
+      library->selectRows({row("k1.jpg"), row("k2.jpg"), row("podfolder")});
+      window.trigger("trashSelection");
+      waitFor([&] { return dialogOf(gtkWindow) != nullptr; }, "question to confirm");
+      check(press(dialogOf(gtkWindow), "Przenieś 2 pliki do kosza"),
+            "confirm button names the count");
+      waitFor([&] {
+        return !window.movingToTrash() &&
+               window.statusText() == "Przeniesiono do kosza 2 pliki.";
+      }, "moved to the trash");
+      check(!QFileInfo::exists(bin + "/k1.jpg") && !QFileInfo::exists(bin + "/k2.jpg") &&
+                inodeOf(trash + "/files/k1.jpg") == k1 &&
+                inodeOf(trash + "/files/k2.jpg") == k2 &&
+                QFileInfo::exists(trash + "/info/k1.jpg.trashinfo") &&
+                QFileInfo(bin + "/podfolder").isDir(),
+            "the very same files are in the test folder's trash, the folder stays");
+      waitFor([&] { return !library->scanning() && library->count() == 3; },
+              "library lists what is left");
+      // The displayed photo: the next one of the folder takes its place.
+      window.open(bin + "/k3.jpg");
+      waitFor([&] { return window.currentPhoto() == bin + "/k3.jpg" && !first->busy(); },
+              "k3 shown");
+      pump(300);
+      window.trigger("trashPhoto");
+      waitFor([&] { return dialogOf(gtkWindow) != nullptr; }, "question for the photo");
+      check(press(dialogOf(gtkWindow), "Przenieś do kosza"), "confirm the photo");
+      waitFor([&] {
+        return !window.movingToTrash() &&
+               window.statusText() == "Przeniesiono do kosza 1 plik.";
+      }, "photo moved");
+      waitFor([&] { return window.currentPhoto() == bin + "/k4.jpg"; },
+              "the next photo replaces the one in the trash");
+      // Delete on the photo itself; the last photo leaves the welcome page.
+      waitFor([&] { return !first->busy(); }, "k4 decoded");
+      check(keyShortcut(first->focusWidget(), GDK_KEY_Delete, true),
+            "Delete on the photo");
+      waitFor([&] { return dialogOf(gtkWindow) != nullptr; }, "question from the photo");
+      check(textOf(GTK_WIDGET(dialogOf(gtkWindow))).contains("Plik „k4.jpg”"),
+            "Delete on the photo asks about that photo only");
+      check(press(dialogOf(gtkWindow), "Przenieś do kosza"), "confirm k4");
+      waitFor([&] { return !window.movingToTrash() && window.welcomeVisible(); },
+              "no photo left to show");
+      check(window.currentPhoto().isEmpty() && QFileInfo::exists(trash + "/files/k4.jpg"),
+            "nothing shows a photo that left");
+      // The compared photo: the next one that is not the left photo takes its
+      // place; with none left the comparison closes.
+      for (const char *name : {"k5.jpg", "k6.jpg", "k7.jpg"})
+        solid(bin + "/" + name, 40, 30, {40, 40, 200});
+      window.open(bin + "/k5.jpg");
+      window.showComparison(bin + "/k6.jpg");
+      waitFor([&] {
+        return window.compareVisible() && !first->busy() && !second->busy();
+      }, "comparison of k5 and k6");
+      pump(300);
+      check(keyShortcut(second->focusWidget(), GDK_KEY_Delete, true),
+            "Delete on the compared photo");
+      waitFor([&] { return dialogOf(gtkWindow) != nullptr; }, "question for the compared photo");
+      check(textOf(GTK_WIDGET(dialogOf(gtkWindow))).contains("Plik „k6.jpg”"),
+            "Delete on the compared photo asks about that photo only");
+      check(press(dialogOf(gtkWindow), "Przenieś do kosza"), "confirm k6");
+      waitFor([&] {
+        return !window.movingToTrash() && window.comparedPhoto() == bin + "/k7.jpg";
+      }, "the next photo takes the compared one's place");
+      check(window.currentPhoto() == bin + "/k5.jpg", "the left photo stays");
+      waitFor([&] { return !second->busy(); }, "k7 decoded");
+      check(keyShortcut(second->focusWidget(), GDK_KEY_Delete, true), "Delete on k7");
+      waitFor([&] { return dialogOf(gtkWindow) != nullptr; }, "question for k7");
+      check(press(dialogOf(gtkWindow), "Przenieś do kosza"), "confirm k7");
+      waitFor([&] { return !window.movingToTrash() && !window.compareVisible(); },
+              "no photo left for the comparison: it closes");
+      check(window.currentPhoto() == bin + "/k5.jpg" &&
+                QFileInfo::exists(trash + "/files/k7.jpg") &&
+                QFileInfo::exists(bin + "/k5.jpg"),
+            "the left photo never fills the comparison");
+    } else {
+      std::cout << "trash: Qt " << qVersion()
+                << " and the test folder on another disk than HOME: only the "
+                   "questions are checked here\n";
+    }
+    window.setLibraryMode(true);
+    window.browse(photos);
+    waitFor([&] { return !library->scanning() && library->count() == 7; },
+            "photos listed again");
+    window.open(shown);
+    waitFor([&] { return window.currentPhoto() == shown && !first->busy(); },
+            "photo restored after the trash");
+    library->selectRows({int(library->names().indexOf("red.jpg")),
+                         int(library->names().indexOf("green.jpg"))});
+    pump(200);
+  }
+
   // --- bookmarks and favourites (isolated XDG_DATA_HOME) ---
   check(!window.bookmarkChecked(), "directory not bookmarked yet");
   window.trigger("star");
@@ -1107,6 +1360,32 @@ void scenario(const QString &photos, const QString &config,
         "closing while asking overwrites nothing");
   check(closedSeen && window.shuttingDown(), "close cancels work and reports");
   check(!window.trigger("open"), "no action runs after shutdown began");
+}
+// Closing the window while the trash question is open moves nothing.
+void closeWhileTrashAsked(const QString &work) {
+  const QString bin = work + "/kosz-zamkniecie",
+                trash = qEnvironmentVariable("XDG_DATA_HOME") + "/Trash";
+  QDir().mkpath(bin);
+  solid(bin + "/z.jpg", 24, 24, {10, 200, 10});
+  const auto before = inodeOf(bin + "/z.jpg");
+  PrismWindow window;
+  window.show();
+  auto *gtkWindow = window.window();
+  waitFor([&] { return gtk_widget_get_mapped(GTK_WIDGET(gtkWindow)); },
+          "second window mapped");
+  window.browse(bin);
+  auto *library = window.library();
+  waitFor([&] { return !library->scanning() && library->count() == 1; },
+          "folder of the close test listed");
+  library->selectRows({0});
+  window.trigger("trashSelection");
+  waitFor([&] { return dialogOf(gtkWindow) != nullptr; },
+          "trash question before closing");
+  window.close();
+  pump(300);
+  check(inodeOf(bin + "/z.jpg") == before &&
+            !QFileInfo::exists(trash + "/files/z.jpg") && !window.movingToTrash(),
+        "closing while asking about the trash moves nothing");
 }
 // README picture: English UI, thumbnails of PHOTOS, the first photo open.
 void readmeShot(const QString &photos, const QString &out) {
@@ -1525,6 +1804,7 @@ int main(int argc, char **argv) {
     PrismLanguage::initialize();
     Theme::install();
     scenario(photos, home.path() + "/config", home.path() + "/work");
+    closeWhileTrashAsked(home.path() + "/work");
     // Repeated construction/destruction: no worker or widget outlives a window.
     for (int i = 0; i < 3; ++i) {
       PrismWindow window;

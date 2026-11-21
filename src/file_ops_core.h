@@ -42,6 +42,25 @@ struct CopyReport {
 
   bool cancelled = false;
 };
+// One file the user asked to move to the trash (Delete), examined before the
+// confirmation. Only regular files are ever moved; links, folders and special
+// files stay where they are.
+struct TrashItem {
+  QString path, note; // note: why a blocked file stays where it is
+  bool blocked = false;
+  qint64 size = 0, modified = 0; // bytes; ms since the epoch
+  // Identity when the file was examined. The file is moved only while it
+  // still has exactly this identity.
+  quint64 device = 0, inode = 0;
+  qint64 changeSec = 0, changeNsec = 0, modSec = 0, modNsec = 0;
+};
+struct TrashReport {
+  int trashed = 0, skipped = 0;  // skipped: changed or gone since the question
+  QStringList trashedPaths;       // original paths, now in the trash
+  QStringList skippedNotes;       // "name — reason" of the skipped files
+  QString error, failedFile;      // failedFile: name of the file that stopped it
+  bool cancelled = false;
+};
 class FileOps {
 public:
   static void copy(const QString &source, const QString &destination,
@@ -72,4 +91,17 @@ public:
   static void trash(const DuplicateGroup &, const QString &selected,
                     const std::shared_ptr<std::atomic_bool> &,
                     const Progress & = {});
+  // Delete: classifies the files the user chose (absolute paths); changes
+  // nothing. Fails for an invalid request (no files or more than 4096).
+  static QList<TrashItem> examineTrash(const QStringList &paths,
+                                       const std::shared_ptr<std::atomic_bool> &);
+  // Moves the examined files to the system trash, called only after the
+  // GUI's confirmation. Never deletes anything permanently and never copies:
+  // the trash is reached by a rename (or a link) on the same disk, so each
+  // file is at any moment either in its folder or in the trash. A file that
+  // changed since it was examined stays where it is. Stops at the first error;
+  // files moved before it stay in the trash, where they can be restored.
+  static TrashReport trashItems(const QList<TrashItem> &,
+                                const std::shared_ptr<std::atomic_bool> &,
+                                const Progress & = {});
 };

@@ -526,6 +526,159 @@ void FileOps::trash(const DuplicateGroup &group, const QString &selected,
     fail("Nie można przenieść pliku do kosza: " + trashFile.errorString() +
          ". Pliku nie usunięto trwale.");
 }
+namespace {
+bool sameItem(const struct stat &t, const TrashItem &item) {
+  return S_ISREG(t.st_mode) && quint64(t.st_dev) == item.device &&
+         quint64(t.st_ino) == item.inode && qint64(t.st_size) == item.size &&
+         qint64(t.st_mtim.tv_sec) == item.modSec &&
+         qint64(t.st_mtim.tv_nsec) == item.modNsec &&
+         qint64(t.st_ctim.tv_sec) == item.changeSec &&
+         qint64(t.st_ctim.tv_nsec) == item.changeNsec;
+}
+} // namespace
+QList<TrashItem>
+FileOps::examineTrash(const QStringList &paths,
+                      const std::shared_ptr<std::atomic_bool> &token) {
+  if (paths.isEmpty() || paths.size() > 4096)
+    fail("Wybierz od 1 do 4096 plików.");
+  QList<TrashItem> items;
+  QSet<QString> seen;
+  for (const auto &original : paths) {
+    checkCancel(token);
+    TrashItem item;
+    item.path = original;
+    item.blocked = true;
+    if (original.isEmpty() || original.contains(QChar::Null) ||
+        original.size() > 8192 || QDir::isRelativePath(original)) {
+      item.note = "nieprawidłowa ścieżka";
+      items.append(item);
+      continue;
+    }
+    item.path = QDir::cleanPath(original);
+    if (seen.contains(item.path))
+      continue;
+    seen.insert(item.path);
+    struct stat st{};
+    const QByteArray native = QFile::encodeName(item.path);
+    const QString folder = QFileInfo(item.path).absolutePath();
+    if (lstat(native.constData(), &st))
+      item.note = errno == ENOENT ? "pliku już nie ma" : "nie można sprawdzić pliku";
+    else if (S_ISLNK(st.st_mode))
+      item.note = "to dowiązanie, nie plik";
+    else if (S_ISDIR(st.st_mode))
+      item.note = "to folder, a foldery nie trafiają do kosza";
+    else if (!S_ISREG(st.st_mode))
+      item.note = "to plik specjalny";
+    // Moving a name out of a folder needs the right to change that folder.
+    else if (::access(QFile::encodeName(folder).constData(), W_OK | X_OK))
+      item.note = "brak uprawnień do zmiany folderu";
+    else {
+      item.blocked = false;
+      item.size = qint64(st.st_size);
+      item.modified = milliseconds(st.st_mtim);
+      item.device = quint64(st.st_dev);
+      item.inode = quint64(st.st_ino);
+      item.modSec = qint64(st.st_mtim.tv_sec);
+      item.modNsec = qint64(st.st_mtim.tv_nsec);
+      item.changeSec = qint64(st.st_ctim.tv_sec);
+      item.changeNsec = qint64(st.st_ctim.tv_nsec);
+    }
+    items.append(item);
+  }
+  return items;
+}
+TrashReport FileOps::trashItems(const QList<TrashItem> &items,
+                                const std::shared_ptr<std::atomic_bool> &token,
+                                const Progress &progress) {
+  TrashReport r;
+  qint64 total = 0, done = 0;
+  for (const auto &item : items)
+    total += !item.blocked;
+  bool prepared = false;
+  for (const auto &item : items) {
+    if (item.blocked)
+      continue;
+    if (token->load()) {
+      r.cancelled = true;
+      break;
+    }
+    if (progress)
+      progress(done, total);
+    const QString name = QFileInfo(item.path).fileName();
+    const QByteArray native = QFile::encodeName(item.path);
+    // The very file that was shown in the question, or nothing.
+    struct stat now{};
+    if (lstat(native.constData(), &now)) {
+      ++r.skipped;
+      r.skippedNotes << QString("%1 — pliku już nie ma").arg(name);
+      continue;
+    }
+    if (!sameItem(now, item)) {
+      ++r.skipped;
+      r.skippedNotes << QString("%1 — plik zmienił się od pytania").arg(name);
+      continue;
+    }
+    // Qt needs the data folder of the home trash ($XDG_DATA_HOME).
+    if (!prepared && !QDir().mkpath(QStandardPaths::writableLocation(
+                         QStandardPaths::GenericDataLocation))) {
+      r.error = "Nie można przygotować katalogu danych kosza.";
+      r.failedFile = name;
+      break;
+    }
+    prepared = true;
+    // QFile::moveToTrash follows the freedesktop.org trash specification:
+    // the information file is written first, then the file is renamed (or
+    // linked and its old name removed) into the trash of the same disk.
+    // It never copies, so it cannot leave a half-written file.
+    QFile file(item.path);
+    if (!file.moveToTrash()) {
+      r.error = QString("Nie można przenieść pliku do kosza (%1). Plik pozostał "
+                        "na miejscu.")
+                    .arg(file.errorString());
+      r.failedFile = name;
+      break;
+    }
+    ++done;
+    // Qt (6.7+) links the file into the trash, then removes its old name.
+    // Without the right to change the folder that removal fails silently:
+    // the file never left the folder.
+    struct stat left{}, moved{};
+    if (!lstat(native.constData(), &left) &&
+        quint64(left.st_dev) == item.device &&
+        quint64(left.st_ino) == item.inode) {
+      // The trash entry is then only a second name of the very same file.
+      // Removing that name (and its information file) keeps the trash from
+      // listing a file that is still in its folder; the file is untouched.
+      const QString extra = file.fileName();
+      struct stat second{};
+      if (extra != item.path &&
+          !lstat(QFile::encodeName(extra).constData(), &second) &&
+          second.st_dev == left.st_dev && second.st_ino == left.st_ino &&
+          left.st_nlink >= 2 &&
+          ::unlink(QFile::encodeName(extra).constData()) == 0) {
+        const QFileInfo trashed(extra);
+        const QString info = QDir::cleanPath(trashed.absolutePath() + "/../info/" +
+                                             trashed.fileName() + ".trashinfo");
+        if (QFileInfo(info).isFile() && !QFileInfo(info).isSymLink())
+          QFile::remove(info);
+      }
+      r.error = "Plik pozostał w folderze (brak uprawnień do zmiany folderu).";
+      r.failedFile = name;
+      break;
+    }
+    ++r.trashed;
+    r.trashedPaths << item.path;
+    if (lstat(QFile::encodeName(file.fileName()).constData(), &moved) ||
+        quint64(moved.st_ino) != item.inode) {
+      r.error = "W koszu jest inny plik niż sprawdzony. Sprawdź kosz.";
+      r.failedFile = name;
+      break;
+    }
+  }
+  if (progress)
+    progress(done, total);
+  return r;
+}
 // Virtual hierarchy: no thumbnail work or one-widget-per-file allocation on the
 // GUI thread.
 void FileOps::copyBatch(const QStringList &sources, const QString &directory,
