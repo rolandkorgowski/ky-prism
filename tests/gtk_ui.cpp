@@ -596,6 +596,26 @@ void scenario(const QString &photos, const QString &config,
   waitFor([&] { return !first->busy() && first->imageSize() == QSize(640, 480); },
           "tab photo reloaded");
   shot(root, "07-tabs");
+  {
+    // A click on a tab's button hands ←/→ to the tab's photo.
+    QList<GtkWidget *> titles;
+    std::function<void(GtkWidget *)> collect = [&](GtkWidget *w) {
+      if (gtk_widget_has_css_class(w, "tabtitle"))
+        titles.append(w);
+      for (auto *c = gtk_widget_get_first_child(w); c; c = gtk_widget_get_next_sibling(c))
+        collect(c);
+    };
+    collect(GTK_WIDGET(gtkWindow));
+    check(titles.size() == 2, "two tab buttons");
+    g_signal_emit_by_name(titles.at(1), "clicked");
+    check(window.activeTab() == 1 && window.welcomeVisible(), "click on the empty tab");
+    gtk_widget_grab_focus(titles.at(0));
+    g_signal_emit_by_name(titles.at(0), "clicked");
+    check(window.activeTab() == 0 && window.currentPhoto().endsWith("green.jpg") &&
+              gtk_window_get_focus(gtkWindow) == first->focusWidget(),
+          "a click on a tab hands the arrows to its photo");
+    waitFor([&] { return !first->busy(); }, "tab photo after the click");
+  }
   window.trigger("nextTab");
   window.trigger("closeTab");
   check(window.tabCount() == 1 && window.currentPhoto().endsWith("green.jpg"),

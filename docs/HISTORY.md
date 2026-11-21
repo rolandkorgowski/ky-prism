@@ -18,13 +18,18 @@ strzałki wracały, stąd „czasami”.
   ↑ / ↓ i Enter dalej przeglądają listę z klawiatury.
 - ← / → naciśnięte, gdy folder jest jeszcze wczytywany, czeka na listę i wtedy
   przełącza zdjęcie. Wcześniej takie naciśnięcie przepadało.
+- To samo po kliknięciu karty: zdjęcie karty otwierało się bez fokusu, a fokus
+  zostawał na przycisku karty. Teraz kliknięcie karty (i zamknięcie karty
+  krzyżykiem) przenosi fokus na wyświetlone zdjęcie.
 - Zdjęcie dodane do folderu po jego wczytaniu (np. kopia lub eksport) nie było
   na liście sąsiadów, więc strzałki na nim nie działały. Teraz pierwsza
   strzałka wczytuje folder ponownie i przełącza zdjęcie.
 - Test okna `gtk_ui`: zmiana folderu, kliknięcie pliku przy fokusie w liście,
-  ← / →, zdjęcie dodane po wczytaniu folderu i Enter w liście.
+  ← / →, zdjęcie dodane po wczytaniu folderu, Enter w liście i kliknięcie karty.
 - Bez sprawdzenia: prawdziwe kliknięcie myszą i naciśnięcie klawisza (test
-  wywołuje obsługę kliknięcia i skrót bezpośrednio).
+  wywołuje obsługę kliknięcia i skrót bezpośrednio), strzałka naciśnięta
+  w trakcie wczytywania folderu (brak testu) oraz to, czy test zdjęcia dodanego
+  po wczytaniu nie przechodził bez poprawki (uruchomiony tylko z poprawką).
 
 ## 0.14.0 — przenoszenie do kosza (Delete)
 

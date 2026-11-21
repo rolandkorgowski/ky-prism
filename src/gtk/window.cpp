@@ -392,6 +392,7 @@ struct PrismWindow::Impl : QObject {
     if (isShuttingDown)
       return;
     trashNotice.clear();
+    relisted.clear();
     if (!validLocalPath(name)) {
       setStatus("Nieprawidłowa lub zbyt długa ścieżka.");
       return;
@@ -604,14 +605,27 @@ struct PrismWindow::Impl : QObject {
     Gx::addClass(tab.titleButton, "tabtitle");
     gtk_button_set_child(GTK_BUTTON(tab.titleButton), tab.label);
     auto *box = tab.box;
-    Gx::on(tab.titleButton, "clicked", [this, box] { selectTab(tabIndexOf(box)); });
+    // A tab picked with its button hands the keyboard to the shown photo,
+    // as a click on a file in the library does; the closed tab's button
+    // takes its focus with it.
+    Gx::on(tab.titleButton, "clicked", [this, box] {
+      selectTab(tabIndexOf(box));
+      focusShownPhoto();
+    });
     gtk_box_append(GTK_BOX(tab.box), tab.titleButton);
     auto *close = Ui::button("tabClose", "", "Zamknij kartę • Ctrl+Shift+W",
-                             [this, box] { closeTab(tabIndexOf(box)); });
+                             [this, box] {
+                               closeTab(tabIndexOf(box));
+                               focusShownPhoto();
+                             });
     Gx::addClass(close, "tabclose");
     gtk_box_append(GTK_BOX(tab.box), close);
     gtk_box_append(GTK_BOX(tabsBox), tab.box);
     tabWidgets.push_back(tab);
+  }
+  void focusShownPhoto() {
+    if (!isShuttingDown && !welcomeShown() && !activePhoto().isEmpty())
+      gtk_widget_grab_focus(activeView()->focusWidget());
   }
   void saveTab() {
     if (activeTabIndex >= 0 && activeTabIndex < tabStates.size())
