@@ -49,7 +49,7 @@ class Packaging(unittest.TestCase):
    for command in ['ky-prism','omarchy-prism']:
     version=subprocess.run([str(home/'.local/bin'/command),'--version'],env=launch_env,capture_output=True,text=True,timeout=10)
     self.assertEqual(version.returncode,0,version.stderr)
-    self.assertEqual(version.stdout.strip(),'ky-prism 0.14.0')
+    self.assertEqual(version.stdout.strip(),'ky-prism 0.14.1')
    self.assertIn('Name=ky-prism',desktop)
    self.assertIn('NoDisplay=true',(home/'.local/share/applications/omarchy-prism.desktop').read_text())
    self.assertIn('-- existing',config.read_text());self.assertEqual(config.read_text().count('require("hypr.prism")'),1)

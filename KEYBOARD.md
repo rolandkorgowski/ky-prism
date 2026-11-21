@@ -158,3 +158,6 @@ uruchamia przycisk z podkreśloną literą także w dialogach GTK.
 0.14: Delete przenosi do kosza zaznaczone pliki biblioteki albo wyświetlone
 zdjęcie, zawsze po potwierdzeniu (domyślnie Anuluj). Prawy przycisk na pliku
 w bibliotece otwiera menu z tą samą czynnością.
+
+0.14.1: kliknięcie pliku w bibliotece lub karty przenosi fokus na zdjęcie, więc
+← / → od razu przełączają zdjęcia. Enter w liście zostawia fokus w liście.

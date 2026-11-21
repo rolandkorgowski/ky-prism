@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(KyPrism VERSION 0.14.0 LANGUAGES CXX)
+project(KyPrism VERSION 0.14.1 LANGUAGES CXX)
 include(GNUInstallDirs)
 include(CTest)
 set(CMAKE_CXX_STANDARD 20)

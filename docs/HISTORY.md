@@ -3,7 +3,7 @@
 Raporty `reports/…` wymienione niżej są lokalnymi logami z testów i nie są publikowane w repozytorium.
 
 
-## Po 0.14.0 — strzałki po kliknięciu pliku w bibliotece
+## 0.14.1 — strzałki po kliknięciu pliku w bibliotece
 
 Objaw: po przejściu do innego folderu i kliknięciu zdjęcia w lewej liście
 ← / → nie przełączały zdjęć. Przyczyną nie była zmiana folderu, tylko fokus.
