@@ -1072,8 +1072,9 @@ void LibraryPane::focusEntries() {
     // The view's own cursor, when it has one, takes the keyboard.
     gtk_widget_grab_focus(view);
     auto *focus = gtk_root_get_focus(gtk_widget_get_root(view));
-    if ((focus && focus != view && gtk_widget_is_ancestor(focus, view)) ||
-        d->entries.empty())
+    const bool onEntry = focus && focus != view && !GTK_IS_LIST_BASE(focus) &&
+                         gtk_widget_is_ancestor(focus, view);
+    if (onEntry || d->entries.empty())
       return;
     position = 0;
   }

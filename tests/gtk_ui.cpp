@@ -251,10 +251,10 @@ bool keyShortcut(GtkWidget *widget, guint key, bool activate) {
   g_object_unref(controllers);
   return found;
 }
-// What GTK runs when `key` (with `modifiers`) reaches the window unhandled:
-// the window's own class binding. Arrows and Tab emit "move-focus" there.
-bool windowKey(GtkWindow *window, guint key,
-               GdkModifierType modifiers = GdkModifierType(0)) {
+// What GTK runs when `key` (with `modifiers`) reaches `widget` unhandled:
+// its own bindings, class ones included, with their arguments.
+bool boundKey(GtkWidget *widget, guint key,
+              GdkModifierType modifiers = GdkModifierType(0)) {
   std::function<bool(GtkShortcutTrigger *)> matches = [&](GtkShortcutTrigger *t) {
     if (GTK_IS_ALTERNATIVE_TRIGGER(t))
       return matches(gtk_alternative_trigger_get_first(GTK_ALTERNATIVE_TRIGGER(t))) ||
@@ -263,7 +263,7 @@ bool windowKey(GtkWindow *window, guint key,
            gtk_keyval_trigger_get_keyval(GTK_KEYVAL_TRIGGER(t)) == key &&
            gtk_keyval_trigger_get_modifiers(GTK_KEYVAL_TRIGGER(t)) == modifiers;
   };
-  GListModel *controllers = gtk_widget_observe_controllers(GTK_WIDGET(window));
+  GListModel *controllers = gtk_widget_observe_controllers(widget);
   bool found = false;
   for (guint i = 0; i < g_list_model_get_n_items(controllers) && !found; ++i) {
     auto *controller = g_list_model_get_item(controllers, i);
@@ -271,11 +271,10 @@ bool windowKey(GtkWindow *window, guint key,
       auto *shortcuts = G_LIST_MODEL(controller);
       for (guint j = 0; j < g_list_model_get_n_items(shortcuts) && !found; ++j) {
         auto *shortcut = GTK_SHORTCUT(g_list_model_get_item(shortcuts, j));
-        if (GTK_IS_SIGNAL_ACTION(gtk_shortcut_get_action(shortcut)) &&
-            matches(gtk_shortcut_get_trigger(shortcut)))
+        if (matches(gtk_shortcut_get_trigger(shortcut)))
           found = gtk_shortcut_action_activate(gtk_shortcut_get_action(shortcut),
                                                GTK_SHORTCUT_ACTION_EXCLUSIVE,
-                                               GTK_WIDGET(window),
+                                               widget,
                                                gtk_shortcut_get_arguments(shortcut));
         g_object_unref(shortcut);
       }
@@ -285,6 +284,32 @@ bool windowKey(GtkWindow *window, guint key,
   g_object_unref(controllers);
   pump(30);
   return found;
+}
+// The window's own binding for `key`: arrows and Tab emit "move-focus".
+bool windowKey(GtkWindow *window, guint key,
+               GdkModifierType modifiers = GdkModifierType(0)) {
+  return boundKey(GTK_WIDGET(window), key, modifiers);
+}
+// The visible "Załaduj zdjęcie" button of the welcome page.
+GtkWidget *welcomeButtonOf(GtkWidget *root) {
+  if (GTK_IS_BUTTON(root) && gtk_widget_has_css_class(root, "suggested") &&
+      gtk_widget_is_visible(root))
+    return root;
+  for (auto *c = gtk_widget_get_first_child(root); c; c = gtk_widget_get_next_sibling(c))
+    if (auto *found = welcomeButtonOf(c))
+      return found;
+  return nullptr;
+}
+// The list or grid inside a library view (the column view holds a list).
+GtkWidget *listBaseOf(GtkWidget *view) {
+  return GTK_IS_LIST_BASE(view) ? view : findType(view, GTK_TYPE_LIST_BASE);
+}
+// The keyboard sits on an entry (a row or a thumbnail) of `view`, not on the
+// view itself.
+bool focusOnEntry(GtkWindow *window, GtkWidget *view) {
+  auto *focus = gtk_window_get_focus(window);
+  return focus && view && gtk_widget_is_ancestor(focus, view) &&
+         !GTK_IS_LIST_BASE(focus) && !GTK_IS_COLUMN_VIEW(focus);
 }
 // The button of `area` whose tooltip starts with `tip`.
 GtkWidget *buttonWithTip(GtkWidget *area, const QString &tip) {
@@ -373,6 +398,41 @@ void scenario(const QString &photos, const QString &config,
   auto *library = window.library();
   waitFor([&] { return !library->scanning() && library->count() == 7; },
           "directory listed");
+  // --- a freshly opened window: the arrows go to the library, not to the
+  // buttons; in the list and in the thumbnails, with or without a selection ---
+  pump(200);
+  {
+    auto *welcome = welcomeButtonOf(GTK_WIDGET(gtkWindow));
+    check(welcome && gtk_window_get_focus(gtkWindow) == welcome,
+          "the welcome button has the keyboard at start");
+    const auto names0 = library->names();
+    for (bool thumbnails : {false, true}) {
+      window.setLibraryMode(thumbnails);
+      pump(300);
+      auto *view = library->focusWidget();
+      const QString mode = thumbnails ? "thumbnails" : "list";
+      for (bool chosen : {false, true}) {
+        library->selectRows(chosen ? QList<int>{2} : QList<int>{});
+        gtk_widget_grab_focus(welcome);
+        windowKey(gtkWindow, GDK_KEY_Down);
+        check(focusOnEntry(gtkWindow, view) && window.welcomeVisible(),
+              qPrintable("an arrow at start hands the keyboard to an entry of the " +
+                         mode + (chosen ? " (selection)" : " (no selection)")));
+        // The view's own arrow then works from there: with no selection it
+        // selects the entry it is on, the first; with one it moves on.
+        check(boundKey(listBaseOf(view), thumbnails ? GDK_KEY_Right : GDK_KEY_Down),
+              "the view binds its arrows");
+        const QString expected = photos + "/" + names0.at(chosen ? 3 : 0);
+        check(library->selectedPath() == expected,
+              qPrintable("the " + mode + "'s own arrow continues from the entry " +
+                         "the keyboard went to: " + library->selectedPath()));
+      }
+    }
+    window.setLibraryMode(false);
+    library->selectRows({});
+    gtk_widget_grab_focus(welcome);
+    pump(100);
+  }
   const QStringList expected{"Wakacje",      "IMG_2.jpg",  "IMG_10.jpg",
                              "blue.png",     "green.jpg",  "red.jpg",
                              "żółć [#].jpg"};
@@ -692,12 +752,12 @@ void scenario(const QString &photos, const QString &config,
               window.currentDirectory() == photos,
           "↑/↓ in the path field stay in the field");
     // A control of the library: arrows go into the list.
+    // ↑ from the topmost button of the panel: GTK alone would go up to the
+    // toolbar.
     auto *up = buttonWithTip(main, "Katalog nadrzędny");
     check(up && gtk_widget_grab_focus(up), "a library button holds the keyboard");
-    windowKey(gtkWindow, GDK_KEY_Down);
-    check(focusIn(gtkWindow, library->focusWidget()) &&
-              gtk_window_get_focus(gtkWindow) != library->focusWidget() &&
-              at("/green.jpg"),
+    windowKey(gtkWindow, GDK_KEY_Up);
+    check(focusOnEntry(gtkWindow, library->focusWidget()) && at("/green.jpg"),
           "an arrow on a library button hands the keyboard to the list");
     // The photo's menu still walks its items with the arrows.
     window.showPhotoMenu(120, 120);
@@ -712,8 +772,9 @@ void scenario(const QString &photos, const QString &config,
         findMenu(c);
     };
     findMenu(main);
-    auto *item = menu ? findType(menu, GTK_TYPE_BUTTON) : nullptr;
-    check(item && gtk_widget_grab_focus(item), "photo menu open, first item focused");
+    auto *item = gtk_window_get_focus(gtkWindow);
+    check(menu && item && focusIn(gtkWindow, menu),
+          "the opened photo menu has the keyboard");
     windowKey(gtkWindow, GDK_KEY_Down);
     auto *next = gtk_window_get_focus(gtkWindow);
     check(next && next != item && focusIn(gtkWindow, menu),
@@ -824,23 +885,13 @@ void scenario(const QString &photos, const QString &config,
   check(window.welcomeVisible() && window.currentPhoto().isEmpty(),
         "new tab starts empty");
   {
-    // On the welcome page an arrow hands the keyboard to the library.
-    GtkWidget *welcome = nullptr;
-    std::function<void(GtkWidget *)> find = [&](GtkWidget *w) {
-      if (GTK_IS_BUTTON(w) && gtk_widget_has_css_class(w, "suggested") &&
-          gtk_widget_is_visible(w))
-        welcome = w;
-      for (auto *c = gtk_widget_get_first_child(w); c && !welcome;
-           c = gtk_widget_get_next_sibling(c))
-        find(c);
-    };
-    find(GTK_WIDGET(gtkWindow));
+    // On the welcome page of a new tab an arrow hands the keyboard to the
+    // library.
+    auto *welcome = welcomeButtonOf(GTK_WIDGET(gtkWindow));
     check(welcome && gtk_widget_grab_focus(welcome), "the welcome button holds the keyboard");
     windowKey(gtkWindow, GDK_KEY_Right);
-    check(focusIn(gtkWindow, library->focusWidget()) &&
-              gtk_window_get_focus(gtkWindow) != library->focusWidget() &&
-              window.welcomeVisible(),
-          "on the welcome page an arrow hands the keyboard to the library");
+    check(focusOnEntry(gtkWindow, library->focusWidget()) && window.welcomeVisible(),
+          "on the welcome page of a new tab an arrow hands the keyboard to the library");
   }
   window.trigger("previousTab");
   check(window.activeTab() == 0 && window.currentPhoto().endsWith("green.jpg"),

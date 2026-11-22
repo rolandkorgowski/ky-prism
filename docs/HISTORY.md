@@ -27,10 +27,12 @@ strzałkach bloku numerycznego.
 - Menu podręczne i okienko wyglądu (osobne powierzchnie GTK) oraz okna
   dialogowe zachowują strzałki jak dotąd.
 - Test okna `gtk_ui` uruchamia wiązania strzałek i Taba okna tak jak GTK
-  (`windowKey`). Sprawdza ↑ / ↓ i Ctrl+↑ na zdjęciu, strzałki bloku
-  numerycznego, przycisk paska, brak fokusu, pole ścieżki, przycisk
-  biblioteki, stronę powitalną, menu zdjęcia (↓ przechodzi do następnej
-  pozycji) oraz Tab i Shift+Tab. Przed poprawką test nie przechodził już na
+  (`windowKey`). Sprawdza świeżo otwarte okno (lista i miniatury, z
+  zaznaczeniem i bez; potem własna strzałka widoku idzie dalej od tej
+  pozycji), ↑ / ↓ i Ctrl+↑ na zdjęciu, strzałki bloku numerycznego, przycisk
+  paska, brak fokusu, pole ścieżki, ↑ na przycisku biblioteki, stronę
+  powitalną nowej karty, menu zdjęcia otwarte z klawiatury (↓ przechodzi do
+  następnej pozycji) oraz Tab i Shift+Tab. Przed poprawką test nie przechodził już na
   ↑ / ↓ na zdjęciu.
 - Bez sprawdzenia: prawdziwe naciśnięcia klawiszy. Test wywołuje wiązanie okna
   bezpośrednio. To, że naciśnięcie dochodzi do niego tak samo, wynika ze źródeł
