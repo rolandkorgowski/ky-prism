@@ -3,7 +3,7 @@
 Raporty `reports/…` wymienione niżej są lokalnymi logami z testów i nie są publikowane w repozytorium.
 
 
-## Po 0.14.1 — boczne przyciski myszy i kółko poziome
+## 0.15.0 — boczne przyciski myszy i kółko poziome
 
 - Przyciski boczne myszy (wstecz 8, dalej 9) przechodzą po historii katalogów,
   jak strzałki na pasku i Alt+← / Alt+→. Działają w całym oknie (gest

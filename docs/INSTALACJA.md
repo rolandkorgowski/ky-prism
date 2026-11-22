@@ -138,8 +138,8 @@ W każdej paczce są `KOPIA.txt` (co zawiera, z jakiego systemu) i
 Na docelowym komputerze lub koncie:
 
 ```sh
-tar xzf ky-prism-0.14.1-przeniesienie.tar.gz
-cd ky-prism-0.14.1
+tar xzf ky-prism-0.15.0-przeniesienie.tar.gz
+cd ky-prism-0.15.0
 ./run.sh
 ```
 

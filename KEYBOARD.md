@@ -167,3 +167,6 @@ w bibliotece otwiera menu z tą samą czynnością.
 
 0.14.1: kliknięcie pliku w bibliotece lub karty przenosi fokus na zdjęcie, więc
 ← / → od razu przełączają zdjęcia. Enter w liście zostawia fokus w liście.
+
+0.15: boczne przyciski myszy (wstecz / dalej) przechodzą po historii katalogów.
+Kółko poziome (np. kciukowe) przesuwa powiększone zdjęcie w lewo i w prawo.
