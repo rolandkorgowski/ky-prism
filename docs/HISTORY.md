@@ -3,6 +3,27 @@
 Raporty `reports/…` wymienione niżej są lokalnymi logami z testów i nie są publikowane w repozytorium.
 
 
+## Po 0.14.1 — boczne przyciski myszy i kółko poziome
+
+- Przyciski boczne myszy (wstecz 8, dalej 9) przechodzą po historii katalogów,
+  jak strzałki na pasku i Alt+← / Alt+→. Działają w całym oknie (gest
+  `GtkGestureClick` w fazie przechwytywania na oknie). Zdjęcie zostaje.
+- Kółko poziome na zdjęciu (np. kciukowe w Logitech MX Master, odchylane
+  kółko, przesunięcie dwoma palcami w bok na touchpadzie) przesuwa
+  powiększone zdjęcie w lewo i w prawo (`PhotoView::scrollSideways`).
+  Zatrzymuje się na krawędziach zdjęcia, nie cofa zdjęcia przeciągniętego
+  poza nie. Zdjęcie mieszczące się w szerokości okna zostaje na miejscu.
+  Krok kółka jak w przewijanych widokach GTK (szerokość widoku do potęgi 2/3),
+  touchpad przesuwa 1:1. Każde zdarzenie idzie za silniejszą osią, więc ruch
+  po skosie na touchpadzie nie przybliża i nie przesuwa naraz. Kółko
+  pionowe nadal przybliża i oddala.
+- Test okna `gtk_ui`: gesty przycisków 8 i 9 na oknie i ich działanie,
+  kontroler przewijania w obu osiach, krok kółka w prawo, krawędzie, zdjęcie
+  dopasowane do okna.
+- Bez sprawdzenia: prawdziwa mysz (MX Master) i touchpad. Test wywołuje
+  gesty i sygnał przewijania bezpośrednio. Nie sprawdzono też, czy na
+  Waylandzie i X11 przyciski boczne dochodzą jako 8 i 9 (tak je opisuje GTK).
+
 ## 0.14.1 — strzałki po kliknięciu pliku w bibliotece
 
 Objaw: po przejściu do innego folderu i kliknięciu zdjęcia w lewej liście

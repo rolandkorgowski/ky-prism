@@ -206,6 +206,10 @@ To see what is missing without installing anything:
 - JPEG, PNG, TIFF and camera RAW files (Canon, Nikon, Sony, Fujifilm,
   Panasonic, Olympus, Pentax, DNG and others via LibRaw), with ICC colour
   management.
+- Mouse: the wheel zooms; a horizontal wheel (e.g. the thumb wheel of a
+  Logitech MX Master) or a sideways touchpad swipe moves an enlarged photo
+  left and right; the side buttons go back / forward through the folder
+  history.
 - Library with list and thumbnail views, natural sorting, tabs and
   side-by-side comparison of two photos.
 - Copy the displayed photo to the clipboard (`Ctrl+C`): paste it as an image

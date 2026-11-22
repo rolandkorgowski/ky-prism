@@ -759,13 +759,26 @@ PhotoView::PhotoView(const QString &accessibleName) : d(new Impl(this)) {
                    },
                    impl);
 
+  // Vertical wheel zooms; the horizontal one (thumb wheel, tilting wheel,
+  // sideways touchpad swipe) moves an enlarged photo left and right. Each
+  // event follows its stronger axis, so a diagonal swipe does not do both.
   auto *scroll = gtk_event_controller_scroll_new(
-      GTK_EVENT_CONTROLLER_SCROLL_VERTICAL);
+      GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES);
   Gx::connect(scroll, "scroll",
-                   +[](GtkEventControllerScroll *, double, double dy,
-                                  gpointer data) -> gboolean {
+                   +[](GtkEventControllerScroll *controller, double dx,
+                       double dy, gpointer data) -> gboolean {
                      auto *self = static_cast<Impl *>(data);
-                     self->q->scale(std::exp(-dy * 0.18), self->pointer);
+                     if (std::abs(dx) > std::abs(dy)) {
+                       // A wheel step moves as far as in GTK scrolled views.
+                       const double step =
+                           gtk_event_controller_scroll_get_unit(controller) ==
+                                   GDK_SCROLL_UNIT_WHEEL
+                               ? std::pow(std::max(1, self->width()), 2.0 / 3.0)
+                               : 1.0;
+                       self->q->scrollSideways(dx * step);
+                     } else if (dy != 0) {
+                       self->q->scale(std::exp(-dy * 0.18), self->pointer);
+                     }
                      return TRUE;
                    },
                    impl);
@@ -1035,6 +1048,28 @@ void PhotoView::pan(QPointF delta) {
   d->offset += delta;
   d->offset = nativeAligned(d->offset, d->zoom, d->dpr());
   d->request();
+}
+bool PhotoView::scrollSideways(double pixels) {
+  if (d->dimensions.isEmpty() || pixels == 0)
+    return false;
+  const double shown = d->dimensions.width() * d->zoom, view = d->width();
+  if (shown <= view + 0.5)
+    return false;
+  d->zoomAnimation.stop();
+  // Stop at the edges, without pulling back a photo dragged past them.
+  const double old = d->offset.x();
+  double next = old - pixels;
+  if (pixels > 0)
+    next = std::max(next, std::min(view - shown, old));
+  else
+    next = std::min(next, std::max(0.0, old));
+  if (std::abs(next - old) < 0.01)
+    return false;
+  d->fitMode = false;
+  d->offset.setX(next);
+  d->offset = nativeAligned(d->offset, d->zoom, d->dpr());
+  d->request();
+  return true;
 }
 QImage PhotoView::framebuffer() {
   if (!d->valid() || d->fbWidth <= 0 || d->fbHeight <= 0)

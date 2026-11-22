@@ -627,6 +627,7 @@ AboutDialog::AboutDialog(GtkWindow *parent) : d(new Impl) {
       {"Ctrl+L lub Alt+D", "Wpisz ścieżkę katalogu"},
       {"F6 / Shift+F6", "Przełącz fokus między zdjęciem, listą i ścieżką"},
       {"Alt+← / Alt+→", "Poprzedni / następny katalog"},
+      {"Boczne przyciski myszy: wstecz / dalej", "Poprzedni / następny katalog"},
       {"Alt+↑", "Katalog nadrzędny"},
       {"Ctrl+D", "Dodaj / usuń zakładkę bieżącego katalogu"},
       {"Ctrl+Shift+B", "Przeglądarka zakładek katalogów"},
@@ -655,6 +656,9 @@ AboutDialog::AboutDialog(GtkWindow *parent) : d(new Impl) {
        "Poprzednie / następne zdjęcie (fokus na zdjęciu, np. po kliknięciu "
        "pliku w bibliotece)"},
       {"F / 1 / + / −", "Dopasuj / 1:1 / zoom (fokus na zdjęciu)"},
+      {"Kółko myszy na zdjęciu", "Przybliż / oddal"},
+      {"Kółko poziome na zdjęciu (np. kciukowe)",
+       "Przesuń powiększone zdjęcie w lewo / w prawo"},
       {"Shift+strzałki",
        "Przesuwaj zdjęcie; z Ctrl: większy krok (fokus na zdjęciu)"},
       {"Tab / Shift+Tab", "Następny / poprzedni element interfejsu"},

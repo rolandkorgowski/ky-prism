@@ -18,6 +18,7 @@ nie przechwytują wpisywania tekstu w ścieżkach i filtrach.
 | Ctrl+L lub Alt+D | Pokaż panel, zaznacz ścieżkę katalogu do wpisania |
 | F6 / Shift+F6 | Kolejny / poprzedni obszar: zdjęcie, lista, ścieżka, widoczny EXIF |
 | Alt+← / Alt+→ | Wstecz / Dalej w historii katalogów |
+| Boczne przyciski myszy (wstecz / dalej) | Wstecz / Dalej w historii katalogów, jak strzałki na pasku |
 | Alt+↑ | Katalog nadrzędny |
 | Ctrl+D | Dodaj / usuń zakładkę bieżącego katalogu (gwiazdka obok serca) |
 | Ctrl+Shift+B | Przeglądarka zakładek |
@@ -47,6 +48,11 @@ Gdy fokus jest **na zdjęciu**:
 | Shift+strzałki | Przesuń widok o 64 piksele logiczne |
 | Ctrl+Shift+strzałki | Przesuń widok o 256 pikseli logicznych |
 | Delete | Przenieś wyświetlone zdjęcie do kosza (zawsze po potwierdzeniu) |
+
+Myszą na zdjęciu: kółko przybliża i oddala, a kółko poziome (np. kciukowe
+w Logitech MX Master, odchylane kółko lub przesunięcie dwoma palcami w bok na
+touchpadzie) przesuwa powiększone zdjęcie w lewo i w prawo, do jego krawędzi.
+Zdjęcie mieszczące się w szerokości okna zostaje na miejscu.
 
 W lewej liście strzałki wybierają pozycję, a Enter otwiera plik lub katalog
 (fokus zostaje w liście). Kliknięcie pliku myszą otwiera zdjęcie i przenosi

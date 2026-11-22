@@ -162,6 +162,20 @@ GtkEventController *controllerOf(GtkWidget *widget, GType type) {
   g_object_unref(list);
   return found;
 }
+// The click gesture of `widget` that listens to mouse button `button` only.
+GtkGesture *buttonGesture(GtkWidget *widget, guint button) {
+  GListModel *list = gtk_widget_observe_controllers(widget);
+  GtkGesture *found = nullptr;
+  for (guint i = 0; i < g_list_model_get_n_items(list) && !found; ++i) {
+    auto *controller = GTK_EVENT_CONTROLLER(g_list_model_get_item(list, i));
+    if (GTK_IS_GESTURE_CLICK(controller) &&
+        gtk_gesture_single_get_button(GTK_GESTURE_SINGLE(controller)) == button)
+      found = GTK_GESTURE(controller);
+    g_object_unref(controller);
+  }
+  g_object_unref(list);
+  return found;
+}
 QStringList filesOf(GdkContentProvider *provider) {
   QStringList paths;
   GValue value = G_VALUE_INIT;
@@ -568,6 +582,59 @@ void scenario(const QString &photos, const QString &config,
     window.open(photos + "/green.jpg");
     waitFor([&] { return window.currentPhoto().endsWith("green.jpg") && !first->busy(); },
             "photo restored after the arrow checks");
+  }
+
+  // --- side buttons of the mouse: back / forward through the folder history ---
+  {
+    auto *back = buttonGesture(GTK_WIDGET(gtkWindow), 8),
+         *forward = buttonGesture(GTK_WIDGET(gtkWindow), 9);
+    check(back && forward &&
+              gtk_event_controller_get_propagation_phase(GTK_EVENT_CONTROLLER(back)) ==
+                  GTK_PHASE_CAPTURE,
+          "the window listens to the back and forward mouse buttons");
+    check(window.currentDirectory() == photos, "photo folder before the side buttons");
+    g_signal_emit_by_name(back, "pressed", 1, 10.0, 10.0);
+    check(window.currentDirectory().endsWith("/strzalki"), "back button: previous folder");
+    g_signal_emit_by_name(forward, "pressed", 1, 10.0, 10.0);
+    check(window.currentDirectory() == photos, "forward button: next folder");
+    check(window.currentPhoto().endsWith("green.jpg"), "the photo stays while walking folders");
+  }
+
+  // --- horizontal wheel: an enlarged photo moves sideways and stops at its
+  // edges; a photo that fits the width stays put ---
+  {
+    auto *canvas = first->focusWidget();
+    auto *wheel = controllerOf(canvas, GTK_TYPE_EVENT_CONTROLLER_SCROLL);
+    check(wheel && (gtk_event_controller_scroll_get_flags(
+                        GTK_EVENT_CONTROLLER_SCROLL(wheel)) &
+                    GTK_EVENT_CONTROLLER_SCROLL_HORIZONTAL),
+          "the photo listens to the horizontal wheel");
+    first->fit();
+    pump(100);
+    const QRectF fitted = first->displayedImageRect();
+    check(!first->scrollSideways(200) && first->displayedImageRect() == fitted,
+          "a photo that fits the width stays put");
+    first->scaleCentered(4.0);
+    const double view = gtk_widget_get_width(canvas);
+    waitFor([&] { return first->displayedImageRect().width() > view + 200; },
+            "photo enlarged for the horizontal wheel");
+    pump(300);
+    const QRectF before = first->displayedImageRect();
+    gboolean handled = FALSE;
+    g_signal_emit_by_name(wheel, "scroll", 1.0, 0.0, &handled);
+    const QRectF moved = first->displayedImageRect();
+    check(handled && moved.x() < before.x() - 10 && moved.y() == before.y() &&
+              moved.size() == before.size(),
+          "a wheel step to the right moves the photo left, without zooming");
+    first->scrollSideways(1e7);
+    const QRectF right = first->displayedImageRect();
+    check(std::abs(right.x() + right.width() - view) <= 1,
+          "the horizontal wheel stops at the right edge");
+    first->scrollSideways(-1e7);
+    check(std::abs(first->displayedImageRect().x()) <= 1,
+          "the horizontal wheel stops at the left edge");
+    first->fit();
+    pump(100);
   }
 
   // --- panels ---

@@ -36,6 +36,7 @@
 #include <QtConcurrent>
 #include <cmath>
 #include <iostream>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -1906,6 +1907,18 @@ struct PrismWindow::Impl : QObject {
     key(GDK_KEY_F6, Gx::Shift, "focusPrevious");
     key(GDK_KEY_Left, Gx::Alt, "directoryBack");
     key(GDK_KEY_Right, Gx::Alt, "directoryForward");
+    // Side buttons of the mouse (back 8, forward 9) walk the folder history,
+    // like the toolbar arrows and Alt+←/→, anywhere in the window.
+    for (const auto &[button, action] :
+         {std::pair<guint, const char *>{8, "directoryBack"},
+          std::pair<guint, const char *>{9, "directoryForward"}}) {
+      auto *click = gtk_gesture_click_new();
+      gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click), button);
+      gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(click),
+                                                 GTK_PHASE_CAPTURE);
+      Gx::on(click, "pressed", [this, name = QString(action)] { q->trigger(name); });
+      gtk_widget_add_controller(w, GTK_EVENT_CONTROLLER(click));
+    }
     key(GDK_KEY_Up, Gx::Alt, "directoryUp");
     key(GDK_KEY_d, Gx::Ctrl, "star");
     key(GDK_KEY_b, Gx::CtrlShift, "bookmarks");

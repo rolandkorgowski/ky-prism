@@ -36,6 +36,11 @@ public:
   void scale(double factor, QPointF anchor);
   void scaleCentered(double factor);
   void pan(QPointF delta);
+  // Horizontal wheel (e.g. a thumb wheel) or a sideways touchpad swipe:
+  // moves a photo wider than the view by `pixels` (positive: towards its
+  // right edge) and stops at its edges. A photo that fits the width stays
+  // put. Returns whether the photo moved.
+  bool scrollSideways(double pixels);
   void release();
   void stop();
   bool busy() const;
