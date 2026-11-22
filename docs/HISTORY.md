@@ -14,12 +14,15 @@ Raporty `reports/…` wymienione niżej są lokalnymi logami z testów i nie są
   Zatrzymuje się na krawędziach zdjęcia, nie cofa zdjęcia przeciągniętego
   poza nie. Zdjęcie mieszczące się w szerokości okna zostaje na miejscu.
   Krok kółka jak w przewijanych widokach GTK (szerokość widoku do potęgi 2/3),
-  touchpad przesuwa 1:1. Każde zdarzenie idzie za silniejszą osią, więc ruch
+  touchpad przesuwa 1:1. Przy 1:1 przesunięcie trafia na piksele ekranu, więc
+  niewykorzystana reszta kroku przechodzi do następnego zdarzenia (inaczej
+  powolny ruch na touchpadzie by ginął). Każde zdarzenie idzie za silniejszą osią, więc ruch
   po skosie na touchpadzie nie przybliża i nie przesuwa naraz. Kółko
   pionowe nadal przybliża i oddala.
 - Test okna `gtk_ui`: gesty przycisków 8 i 9 na oknie i ich działanie,
   kontroler przewijania w obu osiach, krok kółka w prawo, krawędzie, zdjęcie
-  dopasowane do okna.
+  dopasowane do okna, kółko pionowe nadal przybliża, dziesięć kroków po 0,3 px
+  przy 1:1 daje 3 px.
 - Bez sprawdzenia: prawdziwa mysz (MX Master) i touchpad. Test wywołuje
   gesty i sygnał przewijania bezpośrednio. Nie sprawdzono też, czy na
   Waylandzie i X11 przyciski boczne dochodzą jako 8 i 9 (tak je opisuje GTK).

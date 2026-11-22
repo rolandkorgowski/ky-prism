@@ -58,6 +58,10 @@ struct PhotoView::Impl : QObject {
   bool dragging = false, fitMode = true, pendingOpen = false,
        workInFlight = false, isLoading = false;
   double pinchLast = 1.0;
+  // Part of a sideways scroll not applied yet: at 1:1 the offset snaps to
+  // device pixels, and small touchpad steps would otherwise vanish.
+  double sidewaysCarry = 0;
+  int sidewaysDirection = 0;
   QString filename, profile, gpuName;
   std::shared_ptr<Document> document = std::make_shared<Document>();
   std::shared_ptr<std::atomic_bool> cancel =
@@ -1053,21 +1057,29 @@ bool PhotoView::scrollSideways(double pixels) {
   if (d->dimensions.isEmpty() || pixels == 0)
     return false;
   const double shown = d->dimensions.width() * d->zoom, view = d->width();
-  if (shown <= view + 0.5)
+  if (shown <= view + 0.5) {
+    d->sidewaysCarry = 0;
     return false;
+  }
   d->zoomAnimation.stop();
+  const int direction = pixels > 0 ? 1 : -1;
+  if (direction != d->sidewaysDirection)
+    d->sidewaysCarry = 0; // the direction changed
+  d->sidewaysDirection = direction;
+  const double wanted = pixels + d->sidewaysCarry, old = d->offset.x();
   // Stop at the edges, without pulling back a photo dragged past them.
-  const double old = d->offset.x();
-  double next = old - pixels;
-  if (pixels > 0)
-    next = std::max(next, std::min(view - shown, old));
-  else
-    next = std::min(next, std::max(0.0, old));
-  if (std::abs(next - old) < 0.01)
+  double next = old - wanted;
+  const double edge = wanted > 0 ? std::min(view - shown, old) : std::max(0.0, old);
+  const bool atEdge = wanted > 0 ? next <= edge : next >= edge;
+  if (atEdge)
+    next = edge;
+  const QPointF aligned =
+      nativeAligned(QPointF(next, d->offset.y()), d->zoom, d->dpr());
+  d->sidewaysCarry = atEdge ? 0 : wanted - (old - aligned.x());
+  if (std::abs(aligned.x() - old) < 0.01)
     return false;
   d->fitMode = false;
-  d->offset.setX(next);
-  d->offset = nativeAligned(d->offset, d->zoom, d->dpr());
+  d->offset = aligned;
   d->request();
   return true;
 }

@@ -633,6 +633,25 @@ void scenario(const QString &photos, const QString &config,
     first->scrollSideways(-1e7);
     check(std::abs(first->displayedImageRect().x()) <= 1,
           "the horizontal wheel stops at the left edge");
+    const double wide = first->displayedImageRect().width();
+    g_signal_emit_by_name(wheel, "scroll", 0.0, -1.0, &handled);
+    waitFor([&] { return first->displayedImageRect().width() > wide * 1.1; },
+            "the vertical wheel still zooms");
+    // At 1:1 the offset snaps to device pixels: small touchpad steps add up.
+    solid(work + "/szeroki.jpg", 4000, 300, {90, 90, 90});
+    window.open(work + "/szeroki.jpg");
+    waitFor([&] { return first->imageSize() == QSize(4000, 300) && !first->busy(); },
+            "wide photo for small steps");
+    first->actual();
+    pump(100);
+    const double start = first->displayedImageRect().x();
+    for (int i = 0; i < 10; ++i)
+      first->scrollSideways(0.3);
+    check(std::abs(start - first->displayedImageRect().x() - 3.0) <= 0.6,
+          "ten sideways steps of 0.3 px at 1:1 move the photo by 3 px");
+    window.open(photos + "/green.jpg");
+    waitFor([&] { return window.currentPhoto().endsWith("green.jpg") && !first->busy(); },
+            "photo restored after the wheel checks");
     first->fit();
     pump(100);
   }
