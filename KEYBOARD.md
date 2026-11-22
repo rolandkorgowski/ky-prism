@@ -180,3 +180,7 @@ w bibliotece otwiera menu z tą samą czynnością.
 
 0.15: boczne przyciski myszy (wstecz / dalej) przechodzą po historii katalogów.
 Kółko poziome (np. kciukowe) przesuwa powiększone zdjęcie w lewo i w prawo.
+
+0.15.1: strzałki nie przechodzą po przyciskach. Na przycisku lub bez fokusu
+← / → przełączają zdjęcie; bez zdjęcia strzałka przenosi klawiaturę do listy.
+Po przyciskach chodzi się Tabem.

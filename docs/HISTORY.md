@@ -3,7 +3,7 @@
 Raporty `reports/…` wymienione niżej są lokalnymi logami z testów i nie są publikowane w repozytorium.
 
 
-## Po 0.15.0 — strzałki nie chodzą po przyciskach
+## 0.15.1 — strzałki nie chodzą po przyciskach
 
 Objaw: czasem po otwarciu okna strzałki nie przełączały zdjęć, tylko
 podświetlały kolejne przyciski na górze. Przyczyna: GTK przypisuje w oknie
