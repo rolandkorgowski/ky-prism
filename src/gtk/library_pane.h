@@ -34,6 +34,9 @@ public:
   // Single selected entry (file or directory); empty otherwise.
   QString selectedPath(bool *isDirectory = nullptr) const;
   void select(const QString &path);
+  // Hands the keyboard to the visible view: to the first selected entry,
+  // else to the view's own cursor, else to the first entry.
+  void focusEntries();
   void stop();
   void refreshThumbnails();
   // Test / diagnostics access.

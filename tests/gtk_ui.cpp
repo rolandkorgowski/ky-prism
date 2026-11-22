@@ -251,6 +251,58 @@ bool keyShortcut(GtkWidget *widget, guint key, bool activate) {
   g_object_unref(controllers);
   return found;
 }
+// What GTK runs when `key` (with `modifiers`) reaches the window unhandled:
+// the window's own class binding. Arrows and Tab emit "move-focus" there.
+bool windowKey(GtkWindow *window, guint key,
+               GdkModifierType modifiers = GdkModifierType(0)) {
+  std::function<bool(GtkShortcutTrigger *)> matches = [&](GtkShortcutTrigger *t) {
+    if (GTK_IS_ALTERNATIVE_TRIGGER(t))
+      return matches(gtk_alternative_trigger_get_first(GTK_ALTERNATIVE_TRIGGER(t))) ||
+             matches(gtk_alternative_trigger_get_second(GTK_ALTERNATIVE_TRIGGER(t)));
+    return GTK_IS_KEYVAL_TRIGGER(t) &&
+           gtk_keyval_trigger_get_keyval(GTK_KEYVAL_TRIGGER(t)) == key &&
+           gtk_keyval_trigger_get_modifiers(GTK_KEYVAL_TRIGGER(t)) == modifiers;
+  };
+  GListModel *controllers = gtk_widget_observe_controllers(GTK_WIDGET(window));
+  bool found = false;
+  for (guint i = 0; i < g_list_model_get_n_items(controllers) && !found; ++i) {
+    auto *controller = g_list_model_get_item(controllers, i);
+    if (GTK_IS_SHORTCUT_CONTROLLER(controller)) {
+      auto *shortcuts = G_LIST_MODEL(controller);
+      for (guint j = 0; j < g_list_model_get_n_items(shortcuts) && !found; ++j) {
+        auto *shortcut = GTK_SHORTCUT(g_list_model_get_item(shortcuts, j));
+        if (GTK_IS_SIGNAL_ACTION(gtk_shortcut_get_action(shortcut)) &&
+            matches(gtk_shortcut_get_trigger(shortcut)))
+          found = gtk_shortcut_action_activate(gtk_shortcut_get_action(shortcut),
+                                               GTK_SHORTCUT_ACTION_EXCLUSIVE,
+                                               GTK_WIDGET(window),
+                                               gtk_shortcut_get_arguments(shortcut));
+        g_object_unref(shortcut);
+      }
+    }
+    g_object_unref(controller);
+  }
+  g_object_unref(controllers);
+  pump(30);
+  return found;
+}
+// The button of `area` whose tooltip starts with `tip`.
+GtkWidget *buttonWithTip(GtkWidget *area, const QString &tip) {
+  if (GTK_IS_BUTTON(area) || GTK_IS_MENU_BUTTON(area)) {
+    const char *text = gtk_widget_get_tooltip_text(area);
+    if (text && QString::fromUtf8(text).startsWith(tip))
+      return area;
+  }
+  for (auto *c = gtk_widget_get_first_child(area); c; c = gtk_widget_get_next_sibling(c))
+    if (auto *found = buttonWithTip(c, tip))
+      return found;
+  return nullptr;
+}
+// Whether the keyboard focus of `window` is `area` or inside it.
+bool focusIn(GtkWindow *window, GtkWidget *area) {
+  auto *focus = gtk_window_get_focus(window);
+  return focus && area && (focus == area || gtk_widget_is_ancestor(focus, area));
+}
 // The right-button click gesture of a library view.
 GtkGesture *secondaryClick(GtkWidget *view) {
   GListModel *controllers = gtk_widget_observe_controllers(view);
@@ -584,6 +636,101 @@ void scenario(const QString &photos, const QString &config,
             "photo restored after the arrow checks");
   }
 
+  // --- arrows never walk the keyboard over the buttons (GTK's own arrow
+  // bindings of the window would); they browse. Tab walks the controls. ---
+  {
+    auto *canvas = first->focusWidget();
+    auto *main = GTK_WIDGET(gtkWindow);
+    auto at = [&](const char *name) { return window.currentPhoto().endsWith(name); };
+    gtk_widget_grab_focus(canvas);
+    check(windowKey(gtkWindow, GDK_KEY_Up) && windowKey(gtkWindow, GDK_KEY_Down) &&
+              windowKey(gtkWindow, GDK_KEY_Up, Gx::Ctrl),
+          "the window binds ↑/↓ itself");
+    check(gtk_window_get_focus(gtkWindow) == canvas && at("/green.jpg"),
+          "↑/↓ on the photo keep the keyboard on the photo");
+    check(windowKey(gtkWindow, GDK_KEY_KP_Right), "keypad → reaches the window");
+    waitFor([&] { return at("/IMG_10.jpg") && !first->busy(); },
+            "keypad → on the photo opens the next photo");
+    windowKey(gtkWindow, GDK_KEY_KP_Left);
+    waitFor([&] { return at("/green.jpg") && !first->busy(); },
+            "keypad ← on the photo opens the previous photo");
+    check(gtk_window_get_focus(gtkWindow) == canvas, "keypad arrows keep the photo focused");
+    // A mouse click on a toolbar button leaves the keyboard on that button.
+    auto *newTab = buttonWithTip(main, "Nowa karta");
+    check(newTab && gtk_widget_grab_focus(newTab) &&
+              focusIn(gtkWindow, newTab),
+          "a toolbar button holds the keyboard");
+    windowKey(gtkWindow, GDK_KEY_Right);
+    waitFor([&] { return at("/IMG_10.jpg") && !first->busy(); },
+            "→ on a toolbar button opens the next photo");
+    check(gtk_window_get_focus(gtkWindow) == canvas,
+          "→ on a toolbar button hands the keyboard to the photo");
+    gtk_widget_grab_focus(newTab);
+    windowKey(gtkWindow, GDK_KEY_Left);
+    waitFor([&] { return at("/green.jpg") && !first->busy(); },
+            "← on a toolbar button opens the previous photo");
+    gtk_widget_grab_focus(newTab);
+    windowKey(gtkWindow, GDK_KEY_Down);
+    check(gtk_window_get_focus(gtkWindow) == canvas && at("/green.jpg"),
+          "↓ on a toolbar button hands the keyboard to the photo");
+    // Nothing focused at all.
+    gtk_window_set_focus(gtkWindow, nullptr);
+    windowKey(gtkWindow, GDK_KEY_Right);
+    waitFor([&] { return at("/IMG_10.jpg") && !first->busy(); },
+            "→ with nothing focused opens the next photo");
+    check(gtk_window_get_focus(gtkWindow) == canvas,
+          "→ with nothing focused hands the keyboard to the photo");
+    check(keyShortcut(canvas, GDK_KEY_Left, true), "← back on the photo");
+    waitFor([&] { return at("/green.jpg") && !first->busy(); }, "back at green.jpg");
+    // The path field keeps ↑/↓ to itself.
+    window.trigger("focusDirectory");
+    auto *field = gtk_window_get_focus(gtkWindow);
+    check(field && GTK_IS_EDITABLE(field), "the path field has the keyboard");
+    windowKey(gtkWindow, GDK_KEY_Down);
+    windowKey(gtkWindow, GDK_KEY_Up);
+    check(gtk_window_get_focus(gtkWindow) == field && at("/green.jpg") &&
+              window.currentDirectory() == photos,
+          "↑/↓ in the path field stay in the field");
+    // A control of the library: arrows go into the list.
+    auto *up = buttonWithTip(main, "Katalog nadrzędny");
+    check(up && gtk_widget_grab_focus(up), "a library button holds the keyboard");
+    windowKey(gtkWindow, GDK_KEY_Down);
+    check(focusIn(gtkWindow, library->focusWidget()) &&
+              gtk_window_get_focus(gtkWindow) != library->focusWidget() &&
+              at("/green.jpg"),
+          "an arrow on a library button hands the keyboard to the list");
+    // The photo's menu still walks its items with the arrows.
+    window.showPhotoMenu(120, 120);
+    pump(300);
+    GtkWidget *menu = nullptr;
+    std::function<void(GtkWidget *)> findMenu = [&](GtkWidget *w) {
+      if (GTK_IS_POPOVER(w) && gtk_widget_has_css_class(w, "prism-menu") &&
+          gtk_widget_get_visible(w))
+        menu = w;
+      for (auto *c = gtk_widget_get_first_child(w); c && !menu;
+           c = gtk_widget_get_next_sibling(c))
+        findMenu(c);
+    };
+    findMenu(main);
+    auto *item = menu ? findType(menu, GTK_TYPE_BUTTON) : nullptr;
+    check(item && gtk_widget_grab_focus(item), "photo menu open, first item focused");
+    windowKey(gtkWindow, GDK_KEY_Down);
+    auto *next = gtk_window_get_focus(gtkWindow);
+    check(next && next != item && focusIn(gtkWindow, menu),
+          "↓ in the photo menu moves to the next item");
+    if (menu)
+      gtk_popover_popdown(GTK_POPOVER(menu));
+    pump(150);
+    // Tab walks the controls.
+    gtk_widget_grab_focus(canvas);
+    check(windowKey(gtkWindow, GDK_KEY_Tab), "the window binds Tab");
+    auto *after = gtk_window_get_focus(gtkWindow);
+    check(after && after != canvas, "Tab moves the keyboard from the photo to a control");
+    windowKey(gtkWindow, GDK_KEY_Tab, Gx::Shift);
+    check(gtk_window_get_focus(gtkWindow) == canvas, "Shift+Tab returns to the photo");
+    check(at("/green.jpg"), "Tab does not change the photo");
+  }
+
   // --- side buttons of the mouse: back / forward through the folder history ---
   {
     auto *back = buttonGesture(GTK_WIDGET(gtkWindow), 8),
@@ -676,6 +823,25 @@ void scenario(const QString &photos, const QString &config,
   check(window.tabCount() == 2 && window.activeTab() == 1, "new tab is active");
   check(window.welcomeVisible() && window.currentPhoto().isEmpty(),
         "new tab starts empty");
+  {
+    // On the welcome page an arrow hands the keyboard to the library.
+    GtkWidget *welcome = nullptr;
+    std::function<void(GtkWidget *)> find = [&](GtkWidget *w) {
+      if (GTK_IS_BUTTON(w) && gtk_widget_has_css_class(w, "suggested") &&
+          gtk_widget_is_visible(w))
+        welcome = w;
+      for (auto *c = gtk_widget_get_first_child(w); c && !welcome;
+           c = gtk_widget_get_next_sibling(c))
+        find(c);
+    };
+    find(GTK_WIDGET(gtkWindow));
+    check(welcome && gtk_widget_grab_focus(welcome), "the welcome button holds the keyboard");
+    windowKey(gtkWindow, GDK_KEY_Right);
+    check(focusIn(gtkWindow, library->focusWidget()) &&
+              gtk_window_get_focus(gtkWindow) != library->focusWidget() &&
+              window.welcomeVisible(),
+          "on the welcome page an arrow hands the keyboard to the library");
+  }
   window.trigger("previousTab");
   check(window.activeTab() == 0 && window.currentPhoto().endsWith("green.jpg"),
         "first tab restores its photo");

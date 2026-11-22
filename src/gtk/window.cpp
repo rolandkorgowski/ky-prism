@@ -628,6 +628,41 @@ struct PrismWindow::Impl : QObject {
     if (!isShuttingDown && !welcomeShown() && !activePhoto().isEmpty())
       gtk_widget_grab_focus(activeView()->focusWidget());
   }
+  // An arrow that the focused control does not use itself (any button, the
+  // welcome page, ↑/↓ on the photo, the keypad arrows, nothing focused)
+  // reaches the window, whose GTK bindings would walk the keyboard over the
+  // buttons. The arrows browse instead; Tab and F6 walk the controls.
+  // Returns whether the arrow was taken here.
+  bool browseByArrow(GtkDirectionType direction) {
+    if (direction != GTK_DIR_LEFT && direction != GTK_DIR_RIGHT &&
+        direction != GTK_DIR_UP && direction != GTK_DIR_DOWN)
+      return false; // Tab and Shift+Tab
+    auto *focus = gtk_window_get_focus(window);
+    // Menus and popovers walk their own items with the arrows.
+    if (focus && gtk_widget_get_native(focus) != GTK_NATIVE(window))
+      return false;
+    if (isShuttingDown)
+      return true;
+    auto inside = [focus](GtkWidget *area) {
+      return focus && area &&
+             (focus == area || gtk_widget_is_ancestor(focus, area));
+    };
+    // ↑/↓ in the path field (and in the EXIF text) do nothing.
+    if (focus && (GTK_IS_EDITABLE(focus) || inside(exifText)))
+      return true;
+    const bool library = sidebar && gtk_widget_get_visible(sidebar);
+    if (welcomeShown() || activePhoto().isEmpty() ||
+        (library && inside(sidebar))) {
+      // No photo, or a button of the library: the arrows go to the list.
+      if (library)
+        libraryPane->focusEntries();
+      return true;
+    }
+    focusShownPhoto();
+    if (direction == GTK_DIR_LEFT || direction == GTK_DIR_RIGHT)
+      navigate(direction == GTK_DIR_LEFT ? -1 : 1);
+    return true;
+  }
   void saveTab() {
     if (activeTabIndex >= 0 && activeTabIndex < tabStates.size())
       tabStates[activeTabIndex] = {path, history.current(), comparedPath,
@@ -1920,6 +1955,15 @@ struct PrismWindow::Impl : QObject {
       gtk_widget_add_controller(w, GTK_EVENT_CONTROLLER(click));
     }
     key(GDK_KEY_Up, Gx::Alt, "directoryUp");
+    // GTK binds the arrows (plain, with Ctrl, on the keypad) to "move-focus"
+    // on the window; the arrows that reach it browse (browseByArrow).
+    Gx::connect(
+        window, "move-focus",
+        +[](GtkWidget *widget, GtkDirectionType direction, gpointer data) {
+          if (static_cast<Impl *>(data)->browseByArrow(direction))
+            g_signal_stop_emission_by_name(widget, "move-focus");
+        },
+        this);
     key(GDK_KEY_d, Gx::Ctrl, "star");
     key(GDK_KEY_b, Gx::CtrlShift, "bookmarks");
     key(GDK_KEY_h, Gx::CtrlShift, "heart");

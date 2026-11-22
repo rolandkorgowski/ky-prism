@@ -73,6 +73,8 @@ inline const QHash<QString,QString> &prismEnglishCatalog() {
     {QString::fromUtf8("Shift+strzałki"),QString::fromUtf8("Shift+arrow keys")},
     {QString::fromUtf8("Przesuwaj zdjęcie; z Ctrl: większy krok (fokus na zdjęciu)"),QString::fromUtf8("Pan photo; hold Ctrl for larger steps (photo focused)")},
     {QString::fromUtf8("Następny / poprzedni element interfejsu"),QString::fromUtf8("Next / previous interface element")},
+    {QString::fromUtf8("Strzałki, gdy fokus jest na przycisku"),QString::fromUtf8("Arrows while a button has the focus")},
+    {QString::fromUtf8("← / → przełączają zdjęcie; bez zdjęcia lub w panelu plików przechodzą do listy"),QString::fromUtf8("← / → switch the photo; with no photo, or in the file panel, they go to the list")},
     {QString::fromUtf8("Uruchom przycisk; Enter otwiera pozycję listy"),QString::fromUtf8("Activate button; Enter opens the selected list item")},
     {QString::fromUtf8("Ctrl+F (w przeglądarce)"),QString::fromUtf8("Ctrl+F (in a browser)")},
     {QString::fromUtf8("Filtruj zakładki lub ulubione"),QString::fromUtf8("Filter bookmarks or favorites")},

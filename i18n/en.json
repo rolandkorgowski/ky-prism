@@ -67,6 +67,8 @@
   "Shift+strzałki": "Shift+arrow keys",
   "Przesuwaj zdjęcie; z Ctrl: większy krok (fokus na zdjęciu)": "Pan photo; hold Ctrl for larger steps (photo focused)",
   "Następny / poprzedni element interfejsu": "Next / previous interface element",
+  "Strzałki, gdy fokus jest na przycisku": "Arrows while a button has the focus",
+  "← / → przełączają zdjęcie; bez zdjęcia lub w panelu plików przechodzą do listy": "← / → switch the photo; with no photo, or in the file panel, they go to the list",
   "Uruchom przycisk; Enter otwiera pozycję listy": "Activate button; Enter opens the selected list item",
   "Ctrl+F (w przeglądarce)": "Ctrl+F (in a browser)",
   "Filtruj zakładki lub ulubione": "Filter bookmarks or favorites",

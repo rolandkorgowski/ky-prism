@@ -1057,6 +1057,38 @@ void LibraryPane::select(const QString &path) {
       return;
     }
 }
+void LibraryPane::focusEntries() {
+  auto *view = focusWidget();
+  if (!gtk_widget_get_mapped(view))
+    return;
+  guint position = GTK_INVALID_LIST_POSITION;
+  if (GtkBitset *chosen =
+          gtk_selection_model_get_selection(GTK_SELECTION_MODEL(d->selection))) {
+    if (!gtk_bitset_is_empty(chosen))
+      position = gtk_bitset_get_minimum(chosen);
+    gtk_bitset_unref(chosen);
+  }
+  if (position == GTK_INVALID_LIST_POSITION) {
+    // The view's own cursor, when it has one, takes the keyboard.
+    gtk_widget_grab_focus(view);
+    auto *focus = gtk_root_get_focus(gtk_widget_get_root(view));
+    if ((focus && focus != view && gtk_widget_is_ancestor(focus, view)) ||
+        d->entries.empty())
+      return;
+    position = 0;
+  }
+  if (position >= d->entries.size())
+    return;
+  // The cursor moves to the entry (GTK moves the keyboard with it only when
+  // the view already has the keyboard), then the keyboard follows it.
+  if (d->mode == List)
+    gtk_column_view_scroll_to(GTK_COLUMN_VIEW(d->columnView), position, nullptr,
+                              GTK_LIST_SCROLL_FOCUS, nullptr);
+  else
+    gtk_grid_view_scroll_to(GTK_GRID_VIEW(d->gridView), position,
+                            GTK_LIST_SCROLL_FOCUS, nullptr);
+  gtk_widget_grab_focus(view);
+}
 void LibraryPane::refreshThumbnails() { d->rebindThumbnails(); }
 int LibraryPane::count() const { return int(d->entries.size()); }
 bool LibraryPane::scanning() const { return d->scanInFlight; }

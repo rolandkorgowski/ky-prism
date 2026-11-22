@@ -3,6 +3,39 @@
 Raporty `reports/…` wymienione niżej są lokalnymi logami z testów i nie są publikowane w repozytorium.
 
 
+## Po 0.15.0 — strzałki nie chodzą po przyciskach
+
+Objaw: czasem po otwarciu okna strzałki nie przełączały zdjęć, tylko
+podświetlały kolejne przyciski na górze. Przyczyna: GTK przypisuje w oknie
+strzałkom (także z Ctrl i z bloku numerycznego) przesuwanie fokusu
+(`move-focus`). Strzałka, której nie użyła kontrolka z fokusem, przenosiła
+fokus na sąsiedni przycisk, a kolejne chodziły już po pasku. Tak działo się na
+przycisku powitalnym zaraz po starcie, na przycisku klikniętym myszą (GTK
+daje mu fokus), po ↑ / ↓ na zdjęciu (zdjęcie obsługuje tylko ← / →) i po
+strzałkach bloku numerycznego.
+
+- Okno przechwytuje swoje `move-focus` dla kierunków strzałek
+  (`browseByArrow`). Tab, Shift+Tab i F6 działają bez zmian.
+- Ze zdjęciem: ← / → przełączają zdjęcie, każda strzałka oddaje klawiaturę
+  zdjęciu. ↑ / ↓ nie zmieniają zdjęcia.
+- Bez zdjęcia (strona powitalna) i na przyciskach panelu plików strzałka
+  przenosi klawiaturę do listy lub miniatur (`LibraryPane::focusEntries`:
+  zaznaczona pozycja, kursor widoku albo pierwsza pozycja). Ta pierwsza
+  strzałka nie przesuwa jeszcze kursora.
+- W polu ścieżki i w tekście EXIF ↑ / ↓ nic nie robią (wcześniej przenosiły
+  fokus).
+- Menu podręczne i okienko wyglądu (osobne powierzchnie GTK) oraz okna
+  dialogowe zachowują strzałki jak dotąd.
+- Test okna `gtk_ui` uruchamia wiązania strzałek i Taba okna tak jak GTK
+  (`windowKey`). Sprawdza ↑ / ↓ i Ctrl+↑ na zdjęciu, strzałki bloku
+  numerycznego, przycisk paska, brak fokusu, pole ścieżki, przycisk
+  biblioteki, stronę powitalną, menu zdjęcia (↓ przechodzi do następnej
+  pozycji) oraz Tab i Shift+Tab. Przed poprawką test nie przechodził już na
+  ↑ / ↓ na zdjęciu.
+- Bez sprawdzenia: prawdziwe naciśnięcia klawiszy. Test wywołuje wiązanie okna
+  bezpośrednio. To, że naciśnięcie dochodzi do niego tak samo, wynika ze źródeł
+  GTK 4.22.
+
 ## 0.15.0 — boczne przyciski myszy i kółko poziome
 
 - Przyciski boczne myszy (wstecz 8, dalej 9) przechodzą po historii katalogów,

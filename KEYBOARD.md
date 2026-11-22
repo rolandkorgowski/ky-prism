@@ -5,6 +5,13 @@ W głównym oknie `F1` otwiera tę listę, a `Ctrl+F1` informacje o autorze.
 Przyciski można uruchamiać Spacją lub Enterem. Zwykłe litery i strzałki
 nie przechwytują wpisywania tekstu w ścieżkach i filtrach.
 
+Strzałki nie przechodzą po przyciskach, służą do przeglądania. Gdy fokus jest
+na przycisku (np. po kliknięciu go myszą) albo nigdzie, ← / → przełączają
+zdjęcie i oddają mu klawiaturę. Bez otwartego zdjęcia, a także na przyciskach
+panelu plików, strzałka przenosi klawiaturę do listy lub miniatur. ↑ / ↓ na
+zdjęciu i w polu ścieżki nic nie robią. W menu i oknach dialogowych strzałki
+działają jak dotąd.
+
 | Klawisze | Działanie w głównym oknie |
 | --- | --- |
 | Ctrl+Alt+L | Przełącz język PL / EN (przycisk z flagą obok About) |
@@ -57,6 +64,9 @@ Zdjęcie mieszczące się w szerokości okna zostaje na miejscu.
 W lewej liście strzałki wybierają pozycję, a Enter otwiera plik lub katalog
 (fokus zostaje w liście). Kliknięcie pliku myszą otwiera zdjęcie i przenosi
 na nie fokus, więc ← / → od razu przełączają zdjęcia z jego folderu.
+Bez otwartego zdjęcia (np. zaraz po uruchomieniu) pierwsza strzałka przenosi
+klawiaturę do listy, na zaznaczoną pozycję albo na pierwszą; kolejne już
+wybierają pozycje.
 F6 przenosi fokus z listy do ścieżki i dalej do zdjęcia (lub widocznego EXIF).
 W polach tekstowych działają zwykłe skróty edycji, m.in. Ctrl+A/C/V/X/Z.
 Ctrl+C w polu tekstowym lub w zaznaczonym tekście kopiuje ten tekst; poza nimi

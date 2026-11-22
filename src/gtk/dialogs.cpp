@@ -661,6 +661,9 @@ AboutDialog::AboutDialog(GtkWindow *parent) : d(new Impl) {
        "Przesuń powiększone zdjęcie w lewo / w prawo"},
       {"Shift+strzałki",
        "Przesuwaj zdjęcie; z Ctrl: większy krok (fokus na zdjęciu)"},
+      {"Strzałki, gdy fokus jest na przycisku",
+       "← / → przełączają zdjęcie; bez zdjęcia lub w panelu plików przechodzą "
+       "do listy"},
       {"Tab / Shift+Tab", "Następny / poprzedni element interfejsu"},
       {"Spacja / Enter", "Uruchom przycisk; Enter otwiera pozycję listy"},
       {"Ctrl+F (w przeglądarce)", "Filtruj zakładki lub ulubione"},
