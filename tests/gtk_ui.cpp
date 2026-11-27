@@ -353,6 +353,33 @@ GtkWidget *openPopoverWith(GtkWidget *widget, const QString &caption) {
       return found;
   return nullptr;
 }
+// Plain text of the clipboard, read back through GDK.
+QString clipboardText(GtkWidget *widget) {
+  struct Read {
+    QString text;
+    bool done = false;
+  } read;
+  gdk_clipboard_read_text_async(
+      gtk_widget_get_clipboard(widget), nullptr,
+      +[](GObject *source, GAsyncResult *result, gpointer data) {
+        auto *state = static_cast<Read *>(data);
+        g_autofree char *text =
+            gdk_clipboard_read_text_finish(GDK_CLIPBOARD(source), result, nullptr);
+        state->text = QString::fromUtf8(text);
+        state->done = true;
+      },
+      &read);
+  waitFor([&] { return read.done; }, "clipboard text read back");
+  return read.text;
+}
+// The clipboard holds text only: no image, no file to paste into a folder.
+bool clipboardTextOnly(GtkWidget *widget) {
+  auto *formats = gdk_clipboard_get_formats(gtk_widget_get_clipboard(widget));
+  return gdk_content_formats_contain_mime_type(formats, "text/plain;charset=utf-8") &&
+         !gdk_content_formats_contain_mime_type(formats, "image/png") &&
+         !gdk_content_formats_contain_mime_type(formats, "text/uri-list") &&
+         !gdk_content_formats_contain_mime_type(formats, "x-special/gnome-copied-files");
+}
 bool noTemporaries(const QString &folder) {
   return QDir(folder)
       .entryList({".prism-copy-*"}, QDir::Files | QDir::Hidden | QDir::System)
@@ -1214,6 +1241,21 @@ void scenario(const QString &photos, const QString &config,
           "right click selects the file under the pointer");
     auto *menu = openPopoverWith(content(gtkWindow), "Przenieś do kosza…");
     check(menu, "library menu shown");
+    // The path of the file under the pointer, as plain text.
+    check(pressIn(menu, "Kopiuj ścieżkę pliku"), "the thumbnails' menu offers the path");
+    check(!gtk_widget_get_visible(menu), "the menu closes after copying the path");
+    check(window.statusText() == "Skopiowano ścieżkę do schowka: " + bin + "/k3.jpg",
+          "status names the copied path");
+    check(clipboardText(GTK_WIDGET(gtkWindow)) == bin + "/k3.jpg" &&
+              clipboardTextOnly(GTK_WIDGET(gtkWindow)),
+          "the clipboard holds the thumbnail's path as plain text only");
+    check(library->selectedFiles() == QStringList{bin + "/k3.jpg"} &&
+              QFileInfo::exists(bin + "/k3.jpg"),
+          "copying the path changes nothing in the library");
+    g_signal_emit_by_name(click, "pressed", 1, tx, ty);
+    pump(200);
+    check(openPopoverWith(content(gtkWindow), "Przenieś do kosza…") == menu,
+          "library menu shown again");
     check(pressIn(menu, "Przenieś do kosza…"), "menu button");
     waitFor([&] { return dialogOf(gtkWindow) != nullptr; }, "question from the menu");
     check(textOf(GTK_WIDGET(dialogOf(gtkWindow)))
@@ -1223,6 +1265,38 @@ void scenario(const QString &photos, const QString &config,
     check(press(dialogOf(gtkWindow), "Anuluj"), "Anuluj from the menu");
     waitFor([&] { return !dialogOf(gtkWindow); }, "menu question closed");
     check(QFileInfo::exists(bin + "/k3.jpg"), "still there after Anuluj");
+    // The list, several files selected: a right click on one of them keeps
+    // the selection, and the menu copies every selected file's path, one per
+    // line (folders do not count).
+    {
+      window.setLibraryMode(false);
+      pump(300);
+      library->selectRows({row("k1.jpg"), row("k2.jpg"), row("podfolder")});
+      double lx = 0, ly = 0;
+      waitFor([&] { return library->pointOf(bin + "/k2.jpg", &lx, &ly); },
+              "row on screen");
+      auto *listClick = secondaryClick(library->focusWidget());
+      check(listClick, "the list has a right-click menu");
+      g_signal_emit_by_name(listClick, "pressed", 1, lx, ly);
+      pump(200);
+      auto *listMenu = openPopoverWith(content(gtkWindow), "Kopiuj ścieżki plików");
+      check(listMenu, "with several files selected the menu says paths");
+      check(pressIn(listMenu, "Kopiuj ścieżki plików"), "copy the selected paths");
+      check(clipboardText(GTK_WIDGET(gtkWindow)) ==
+                    bin + "/k1.jpg\n" + bin + "/k2.jpg" &&
+                clipboardTextOnly(GTK_WIDGET(gtkWindow)),
+            "two paths, one per line, no folder, no newline at the end");
+      check(window.statusText() == "Skopiowano do schowka 2 ścieżki.",
+            "status counts the paths");
+      // One file selected again: the caption is singular.
+      library->selectRows({row("k2.jpg")});
+      g_signal_emit_by_name(listClick, "pressed", 1, lx, ly);
+      pump(200);
+      auto *single = openPopoverWith(content(gtkWindow), "Kopiuj ścieżkę pliku");
+      check(single, "one selected file: the menu says path");
+      gtk_popover_popdown(GTK_POPOVER(single));
+      pump(150);
+    }
 
     // Qt before 6.7 picks the trash by the disk of HOME: then the test folder
     // could reach a trash outside it, and only the questions are checked here
@@ -1457,6 +1531,25 @@ void scenario(const QString &photos, const QString &config,
     check(window.trigger("photoMenu"), "keyboard photo-menu action");
     pump(300);
     check(gtk_widget_get_visible(menu), "Menu key / Shift+F10 open the menu");
+    // "Kopiuj ścieżkę pliku": the displayed photo's path as plain text.
+    const QString shownPhoto = window.currentPhoto();
+    check(!shownPhoto.isEmpty() && pressIn(menu, "Kopiuj ścieżkę pliku"),
+          "the photo menu offers the path");
+    check(!gtk_widget_get_visible(menu), "the photo menu closes after copying the path");
+    check(window.statusText() == "Skopiowano ścieżkę do schowka: " + shownPhoto,
+          "status names the photo's path");
+    check(clipboardText(GTK_WIDGET(gtkWindow)) == shownPhoto &&
+              clipboardTextOnly(GTK_WIDGET(gtkWindow)),
+          "the clipboard holds the photo's path as plain text only");
+    // A copy of the photo still being prepared does not replace the path.
+    check(window.trigger("copyImage") && window.trigger("copyPath"),
+          "copy the photo, then at once its path");
+    waitFor([&] { return !window.copyingToClipboard(); }, "photo copy stopped");
+    pump(300);
+    check(clipboardText(GTK_WIDGET(gtkWindow)) == shownPhoto &&
+              clipboardTextOnly(GTK_WIDGET(gtkWindow)) &&
+              window.statusText() == "Skopiowano ścieżkę do schowka: " + shownPhoto,
+          "the path stays in the clipboard");
     gtk_popover_popdown(GTK_POPOVER(menu));
     pump(150);
   }

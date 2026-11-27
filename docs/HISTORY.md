@@ -3,6 +3,33 @@
 Raporty `reports/…` wymienione niżej są lokalnymi logami z testów i nie są publikowane w repozytorium.
 
 
+## Po 0.15.1 — kopiowanie ścieżki pliku
+
+- „Kopiuj ścieżkę pliku” w menu zdjęcia (prawy przycisk, klawisz Menu,
+  Shift+F10) oraz w menu pliku w bibliotece, na liście i w miniaturach.
+  Cel: wkleić ścieżkę w terminalu albo w pasku adresu menedżera plików.
+- Do schowka trafia wyłącznie tekst (`gdk_clipboard_set_text`): pełna,
+  uporządkowana ścieżka bez cudzysłowów i bez znaku nowej linii na końcu.
+  Bez pliku i obrazu, więc wklejenie w folderze menedżera plików niczego nie
+  kopiuje. W bibliotece liczą się zaznaczone pliki (prawy przycisk na
+  niezaznaczonym zaznacza tylko jego). Przy kilku plikach każda ścieżka jest
+  w osobnym wierszu, a napis w menu brzmi „Kopiuj ścieżki plików”. Foldery
+  się nie liczą.
+- Przy porównaniu menu kopiuje ścieżkę zdjęcia, na którym je otwarto (to samo
+  aktywne zdjęcie co przy „Kopiuj do schowka”).
+- Kopia zdjęcia do schowka, która jeszcze się przygotowuje, zostaje przerwana.
+  Nie nadpisze później skopiowanej ścieżki: `clipboardReady` odrzuca też wynik
+  gotowy, zanim przyszedł sygnał.
+- Nowa ikona `copyPath` (podkładka ze ścieżką). Pasek stanu podaje
+  skopiowaną ścieżkę albo liczbę ścieżek (z odmianą).
+- Test okna `gtk_ui`: menu zdjęcia (stan, zawartość schowka, tylko tekst),
+  „kopiuj zdjęcie”, a zaraz potem „kopiuj ścieżkę” (ścieżka zostaje; bez tej
+  ochrony test nie przechodzi), menu miniatur (plik pod wskaźnikiem), lista
+  z dwoma plikami i folderem (dwa wiersze, „Skopiowano do schowka 2 ścieżki.”),
+  napis w liczbie pojedynczej przy jednym pliku.
+- Bez sprawdzenia: prawdziwe wklejenie w terminalu i w Nautilusie. Test czyta
+  schowek z powrotem przez GDK we własnym procesie.
+
 ## 0.15.1 — strzałki nie chodzą po przyciskach
 
 Objaw: czasem po otwarciu okna strzałki nie przełączały zdjęć, tylko

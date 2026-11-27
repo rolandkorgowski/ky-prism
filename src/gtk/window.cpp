@@ -139,9 +139,10 @@ struct PrismWindow::Impl : QObject {
     setStatus(enabled ? "Wygładzanie pikseli w powiększeniu: włączone."
                       : "Ostre piksele w powiększeniu (domyślne).");
   }
-  GtkWidget *photoMenu = nullptr, *menuCopy = nullptr, *menuExport = nullptr,
-            *menuPrint = nullptr, *menuHeart = nullptr, *menuTrash = nullptr,
-            *libraryMenu = nullptr;
+  GtkWidget *photoMenu = nullptr, *menuCopy = nullptr, *menuPath = nullptr,
+            *menuExport = nullptr, *menuPrint = nullptr, *menuHeart = nullptr,
+            *menuTrash = nullptr, *libraryMenu = nullptr,
+            *libraryMenuPath = nullptr;
   std::unique_ptr<UsbAccess> usb;
   QMap<QString, Gx::Callback> actionMap;
 
@@ -903,11 +904,53 @@ struct PrismWindow::Impl : QObject {
       return result;
     }));
   }
+  // The path as plain text, for a terminal or a file manager's location bar
+  // (Ctrl+L): absolute, unquoted, one per line, no newline at the end.
+  // Only text: pasting into a folder of a file manager copies no file.
+  void copyPathText(const QStringList &files) {
+    if (isShuttingDown || files.isEmpty())
+      return;
+    QStringList paths;
+    for (const auto &file : files)
+      paths.append(QDir::cleanPath(QFileInfo(file).absoluteFilePath()));
+    // A photo still being prepared for the clipboard must not replace the
+    // path when it is ready.
+    clipboardCancel->store(true);
+    gdk_clipboard_set_text(gtk_widget_get_clipboard(GTK_WIDGET(window)),
+                           Gx::u8(paths.join('\n')).constData());
+    if (paths.size() == 1)
+      setStatus(QString("Skopiowano ścieżkę do schowka: %1").arg(paths.first()));
+    else
+      setStatus(Ui::counted(int(paths.size()), "Skopiowano do schowka %1 ścieżkę.",
+                            "Skopiowano do schowka %1 ścieżki.",
+                            "Skopiowano do schowka %1 ścieżek."));
+  }
+  // The displayed photo (in a comparison: the one whose menu was opened).
+  void copyPhotoPath() {
+    const QString photo = activePhoto();
+    if (photo.isEmpty()) {
+      setStatus("Najpierw otwórz zdjęcie.");
+      return;
+    }
+    copyPathText({photo});
+  }
+  // The files selected in the library (list or thumbnails); folders do not
+  // count.
+  void copySelectionPaths() {
+    const QStringList files =
+        libraryPane ? libraryPane->selectedFiles() : QStringList();
+    if (files.isEmpty()) {
+      setStatus("Zaznacz pliki w bibliotece, aby skopiować ich ścieżki.");
+      return;
+    }
+    copyPathText(files);
+  }
   void clipboardReady() {
     if (isShuttingDown)
       return;
     auto result = clipboardWatcher.result();
-    if (result.cancelled)
+    // Cancelled while decoding, or after it (a path copied meanwhile).
+    if (result.cancelled || clipboardCancel->load())
       return;
     const QString name = QFileInfo(result.path).fileName();
     if (!result.error.isEmpty() || result.png.isEmpty()) {
@@ -1093,6 +1136,7 @@ struct PrismWindow::Impl : QObject {
       return button;
     };
     menuCopy = item("clipboard", "Kopiuj do schowka", "Ctrl+C", "copyImage");
+    menuPath = item("copyPath", "Kopiuj ścieżkę pliku", {}, "copyPath");
     menuExport = item("export", "Eksportuj kopię pliku…", "Ctrl+E", "export");
     menuPrint = item("print", "Drukuj…", "Ctrl+P", "print");
     gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
@@ -1113,17 +1157,25 @@ struct PrismWindow::Impl : QObject {
     gtk_popover_set_position(GTK_POPOVER(libraryMenu), GTK_POS_BOTTOM);
     gtk_widget_set_halign(libraryMenu, GTK_ALIGN_START);
     auto *box = Gx::vbox(2);
-    auto *button = Ui::button("trash", "Przenieś do kosza…", "Delete", [this] {
-      gtk_popover_popdown(GTK_POPOVER(libraryMenu));
-      Gx::later([this, live = alive] {
-        if (*live && !isShuttingDown)
-          q->trigger("trashSelection");
+    auto item = [&](const QString &symbol, const QString &caption,
+                    const QString &tip, const QString &action) {
+      auto *button = Ui::button(symbol, caption, tip, [this, action] {
+        gtk_popover_popdown(GTK_POPOVER(libraryMenu));
+        Gx::later([this, action, live = alive] {
+          if (*live && !isShuttingDown)
+            q->trigger(action);
+        });
       });
-    });
-    Gx::addClass(button, "flat");
-    if (auto *child = gtk_button_get_child(GTK_BUTTON(button)))
-      gtk_widget_set_halign(child, GTK_ALIGN_START);
-    gtk_box_append(GTK_BOX(box), button);
+      Gx::addClass(button, "flat");
+      if (auto *child = gtk_button_get_child(GTK_BUTTON(button)))
+        gtk_widget_set_halign(child, GTK_ALIGN_START);
+      gtk_box_append(GTK_BOX(box), button);
+      return button;
+    };
+    libraryMenuPath =
+        item("copyPath", "Kopiuj ścieżkę pliku", {}, "copySelectionPaths");
+    gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+    item("trash", "Przenieś do kosza…", "Delete", "trashSelection");
     gtk_popover_set_child(GTK_POPOVER(libraryMenu), box);
     gtk_widget_set_parent(libraryMenu, root);
   }
@@ -1137,6 +1189,9 @@ struct PrismWindow::Impl : QObject {
                                   &point))
       return;
     const GdkRectangle at{int(point.x), int(point.y), 1, 1};
+    Ui::text(Ui::buttonLabel(libraryMenuPath),
+             libraryPane->selectedFiles().size() > 1 ? "Kopiuj ścieżki plików"
+                                                     : "Kopiuj ścieżkę pliku");
     gtk_popover_set_pointing_to(GTK_POPOVER(libraryMenu), &at);
     gtk_popover_popup(GTK_POPOVER(libraryMenu));
   }
@@ -1146,6 +1201,7 @@ struct PrismWindow::Impl : QObject {
     viewFocused(target);
     const bool photo = !activePhoto().isEmpty();
     gtk_widget_set_sensitive(menuCopy, photo);
+    gtk_widget_set_sensitive(menuPath, photo);
     gtk_widget_set_sensitive(menuExport, photo);
     gtk_widget_set_sensitive(menuPrint, photo);
     gtk_widget_set_sensitive(menuHeart, photo && !favorites->busy());
@@ -1876,6 +1932,8 @@ struct PrismWindow::Impl : QObject {
     };
     a["copy"] = [this] { showFileDialog(false); };
     a["copyImage"] = [this] { copyToClipboard(); };
+    a["copyPath"] = [this] { copyPhotoPath(); };
+    a["copySelectionPaths"] = [this] { copySelectionPaths(); };
     a["export"] = [this] { exportPhoto(); };
     a["print"] = [this] { startPrint(); };
     a["smoothZoom"] = [this] { setSmoothZoom(!smoothZoom); };

@@ -465,6 +465,17 @@ void draw(cairo_t *cr, const QString &name, double x, double y, double size,
     p.noBrush();
     p.polyline({7, 18, 10.5, 13.5, 13, 16, 14.5, 14.5, 17, 18});
     p.circle(15, 10.5, 1.3);
+  } else if (name == "copyPath") {
+    // Clipboard board with a written path (/ — / —): "copy the location".
+    p.setBrush(soft);
+    p.roundedRect(4, 4, 16, 18, 2.5);
+    p.setBrush(paper);
+    p.roundedRect(8.5, 2, 7, 4, 1.5);
+    p.noBrush();
+    p.line(7, 16.5, 8.7, 11.5);
+    p.line(9.6, 14, 11.4, 14);
+    p.line(12.4, 16.5, 14.1, 11.5);
+    p.line(15, 14, 17, 14);
   } else if (name == "export") {
     // Tray with an upward arrow: a copy of the file leaves for a new place.
     p.polyline({4, 14, 4, 20, 20, 20, 20, 14});

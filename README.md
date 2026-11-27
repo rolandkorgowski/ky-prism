@@ -222,8 +222,12 @@ To see what is missing without installing anything:
   size from the file's DPI, 9×13 to 20×30 cm, A5, A4 or custom), scale, margins,
   colour or greyscale, image quality (150/300/600 dpi), file names under photos,
   and shows a live preview of the sheet. Settings are remembered.
-- Right-click menu on the photo: copy, export, print, favourites, EXIF, full
-  screen.
+- Right-click menu on the photo: copy, copy the file's path, export, print,
+  favourites, EXIF, full screen.
+- Copy file path: from the photo's menu or from the right-click menu of the
+  library (list and thumbnails). The clipboard gets the plain absolute path
+  (one per line for several selected files), ready to paste into a terminal
+  or a file manager's location bar.
 - Drag and drop from the library (list and thumbnails): drag photos to other
   programs (copy only), onto the photo to open it, onto the second photo to
   compare, or onto a folder in the list to copy them there. A file of the

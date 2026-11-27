@@ -71,8 +71,15 @@ F6 przenosi fokus z listy do ścieżki i dalej do zdjęcia (lub widocznego EXIF)
 W polach tekstowych działają zwykłe skróty edycji, m.in. Ctrl+A/C/V/X/Z.
 Ctrl+C w polu tekstowym lub w zaznaczonym tekście kopiuje ten tekst; poza nimi
 kopiuje wyświetlone zdjęcie do schowka. Prawy przycisk myszy na zdjęciu, klawisz
-Menu lub Shift+F10 otwiera menu: kopiuj do schowka, eksportuj kopię pliku,
-ulubione, EXIF, pełny ekran, przenieś do kosza.
+Menu lub Shift+F10 otwiera menu: kopiuj do schowka, kopiuj ścieżkę pliku,
+eksportuj kopię pliku, ulubione, EXIF, pełny ekran, przenieś do kosza.
+
+„Kopiuj ścieżkę pliku” jest w menu zdjęcia i w menu pliku w bibliotece (prawy
+przycisk na liście lub miniaturze). Do schowka trafia sam tekst: pełna ścieżka
+bez cudzysłowów, np. do wklejenia w terminalu albo w pasku adresu menedżera
+plików (Ctrl+L w Nautilusie). Przy kilku zaznaczonych plikach w bibliotece
+każda ścieżka jest w osobnym wierszu; foldery się nie liczą. W terminalu
+ścieżkę ze spacjami weź w cudzysłów.
 
 ## Przeciąganie myszą z lewej listy
 
