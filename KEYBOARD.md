@@ -191,3 +191,6 @@ Kółko poziome (np. kciukowe) przesuwa powiększone zdjęcie w lewo i w prawo.
 0.15.1: strzałki nie przechodzą po przyciskach. Na przycisku lub bez fokusu
 ← / → przełączają zdjęcie; bez zdjęcia strzałka przenosi klawiaturę do listy.
 Po przyciskach chodzi się Tabem.
+
+0.16: „Kopiuj ścieżkę pliku” w menu zdjęcia (także klawisz Menu / Shift+F10)
+i w menu pliku w bibliotece: do schowka trafia sam tekst pełnej ścieżki.

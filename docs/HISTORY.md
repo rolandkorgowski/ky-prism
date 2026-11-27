@@ -3,7 +3,7 @@
 Raporty `reports/…` wymienione niżej są lokalnymi logami z testów i nie są publikowane w repozytorium.
 
 
-## Po 0.15.1 — kopiowanie ścieżki pliku
+## 0.16.0 — kopiowanie ścieżki pliku
 
 - „Kopiuj ścieżkę pliku” w menu zdjęcia (prawy przycisk, klawisz Menu,
   Shift+F10) oraz w menu pliku w bibliotece, na liście i w miniaturach.
